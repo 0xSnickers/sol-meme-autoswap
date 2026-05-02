@@ -36,7 +36,7 @@ async function runGmgn(args) {
 app.get('/health', (_req, res) => {
   res.json({
     ok: true,
-    service: 'gmgn-api',
+    service: 'automated-trading-meme',
   });
 });
 

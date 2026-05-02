@@ -1,6 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import AppFooter from './components/AppFooter';
+import AppHeader from './components/AppHeader';
+import LoadingBlock from './components/LoadingBlock';
+import VirtualListTable from './components/VirtualListTable';
+import { AddressCopy, ExternalLinks } from './components/token-ui';
 
 const POLL_SECONDS = 30;
 const MAX_HISTORY_ITEMS = 3;
@@ -60,20 +65,6 @@ function formatUsdValue(value) {
   return `$${Math.abs(Number(value)).toFixed(2)}`;
 }
 
-function formatXLabel(url) {
-  if (!url) {
-    return 'X';
-  }
-
-  try {
-    const { pathname } = new URL(url);
-    const clean = pathname.replace(/^\/+/, '');
-    return clean ? `X/${clean}` : 'X';
-  } catch {
-    return 'X';
-  }
-}
-
 function formatTime(value) {
   if (!value) {
     return '--';
@@ -121,239 +112,11 @@ function formatDecisionLabel(value) {
   }
 }
 
-function formatAddress(value) {
-  if (!value) {
-    return '--';
-  }
-  return `${value.slice(0, 6)}...${value.slice(-6)}`;
-}
-
-function formatTokenAmount(value) {
-  if (value == null || Number.isNaN(Number(value))) {
-    return '--';
-  }
-
-  return new Intl.NumberFormat('en-US', {
-    notation: value >= 100000 ? 'compact' : 'standard',
-    maximumFractionDigits: value >= 1000 ? 2 : 4,
-  }).format(Number(value));
-}
-
-function LinkIcon({ kind }) {
-  switch (kind) {
-    case 'x':
-      return (
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path
-            fill="currentColor"
-            d="M18.9 2H22l-6.77 7.74L23 22h-6.1l-4.78-6.26L6.64 22H3.53l7.24-8.27L1 2h6.25l4.32 5.7L18.9 2Zm-1.07 18h1.69L6.33 3.9H4.52Z"
-          />
-        </svg>
-      );
-    case 'telegram':
-      return (
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path
-            fill="currentColor"
-            d="M9.78 15.42 9.4 20.8c.54 0 .78-.23 1.06-.51l2.54-2.42 5.27 3.86c.97.53 1.65.25 1.91-.89l3.46-16.2h.01c.31-1.45-.52-2.01-1.47-1.66L2.03 10.74c-1.38.54-1.36 1.31-.24 1.66l5.15 1.6L18.9 6.5c.56-.34 1.07-.15.65.2"
-          />
-        </svg>
-      );
-    case 'website':
-      return (
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path
-            fill="currentColor"
-            d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm6.93 9h-3.11a15.5 15.5 0 0 0-1.38-5.02A8.03 8.03 0 0 1 18.93 11ZM12 4.04c.82 1.12 1.9 3.48 2.21 6.96H9.79C10.1 7.52 11.18 5.16 12 4.04ZM4.06 13h3.11c.16 1.83.64 3.56 1.37 5.02A8.03 8.03 0 0 1 4.06 13Zm3.11-2H4.06a8.03 8.03 0 0 1 4.48-5.02A15.5 15.5 0 0 0 7.17 11Zm4.83 8.96c-.82-1.12-1.9-3.48-2.21-6.96h4.42c-.31 3.48-1.39 5.84-2.21 6.96ZM14.83 13h3.11a8.03 8.03 0 0 1-4.48 5.02A15.5 15.5 0 0 0 14.83 13Z"
-          />
-        </svg>
-      );
-    case 'gmgn':
-      return <span className="link-letter">G</span>;
-    case 'dex':
-      return <span className="link-letter">D</span>;
-    default:
-      return <span className="link-letter">?</span>;
-  }
-}
-
-function AddressCopy({ address, copyId, copiedKey, onCopy }) {
-  return (
-    <div className="ca-row">
-      <span className="ca-text">{formatAddress(address)}</span>
-      <button type="button" className="copy-btn" onClick={() => onCopy(address, copyId)}>
-        {copiedKey === copyId ? '已复制' : '复制'}
-      </button>
-    </div>
-  );
-}
-
-function ExternalLinks({ address, twitter, website, telegram }) {
-  return (
-    <div className="icon-links">
-      {twitter ? (
-        <a
-          href={twitter}
-          target="_blank"
-          rel="noreferrer"
-          className="icon-link"
-          title={formatXLabel(twitter)}
-          aria-label="X"
-        >
-          <LinkIcon kind="x" />
-        </a>
-      ) : null}
-      {website ? (
-        <a
-          href={website}
-          target="_blank"
-          rel="noreferrer"
-          className="icon-link"
-          title="官网"
-          aria-label="官网"
-        >
-          <LinkIcon kind="website" />
-        </a>
-      ) : null}
-      {telegram ? (
-        <a
-          href={telegram}
-          target="_blank"
-          rel="noreferrer"
-          className="icon-link"
-          title="Telegram"
-          aria-label="Telegram"
-        >
-          <LinkIcon kind="telegram" />
-        </a>
-      ) : null}
-      <a
-        href={`https://gmgn.ai/sol/token/${address}`}
-        target="_blank"
-        rel="noreferrer"
-        className="icon-link"
-        title="GMGN"
-        aria-label="GMGN"
-      >
-        <LinkIcon kind="gmgn" />
-      </a>
-      <a
-        href={`https://dexscreener.com/solana/${address}`}
-        target="_blank"
-        rel="noreferrer"
-        className="icon-link"
-        title="Dexscreener"
-        aria-label="Dexscreener"
-      >
-        <LinkIcon kind="dex" />
-      </a>
-    </div>
-  );
-}
-
-function SummaryMetric({ label, value, tone = 'neutral' }) {
-  return (
-    <div className="summary-metric">
-      <span>{label}</span>
-      <strong className={tone === 'positive' ? 'positive' : tone === 'negative' ? 'negative' : ''}>
-        {value}
-      </strong>
-    </div>
-  );
-}
-
-function PaperPositionCard({
-  position,
-  type = 'open',
-  copiedKey,
-  onCopy,
-  streamConnected = false,
-  liveUpdatedAt,
-}) {
-  const isClosed = type === 'closed';
-  const copyId = `${type}-${position.id}`;
-  const valueLabel = isClosed ? '卖出金额' : '当前市值';
-  const valueAmount = position.currentValueUsd;
-  const valuePrice = position.closePrice || position.currentPrice;
-
-  return (
-    <article className="position-card">
-      <div className="position-card-top">
-        <div className="token-main">
-          <strong>{position.name}</strong>
-          <p>{position.symbol}</p>
-          {!isClosed ? (
-            <div className="live-row">
-              <span className={`live-badge ${streamConnected ? 'connected' : 'disconnected'}`}>
-                <span className="live-dot" />
-                {streamConnected ? '实时跟踪中' : '实时重连中'}
-              </span>
-              <span className="live-time">更新 {formatTime(liveUpdatedAt)}</span>
-            </div>
-          ) : null}
-          <AddressCopy
-            address={position.address}
-            copyId={copyId}
-            copiedKey={copiedKey}
-            onCopy={onCopy}
-          />
-        </div>
-        <div className="position-pnl">
-          <strong className={(position.pnlUsd ?? 0) >= 0 ? 'positive' : 'negative'}>
-            {formatUsd(position.pnlUsd)}
-          </strong>
-          <p className={(position.pnlPct ?? 0) >= 0 ? 'positive' : 'negative'}>
-            {formatPercent(position.pnlPct)}
-          </p>
-        </div>
-      </div>
-
-      <div className="position-metrics">
-        <div className="position-metric">
-          <span>买入金额</span>
-          <strong>{formatUsdValue(position.positionSizeUsd)}</strong>
-        </div>
-        <div className="position-metric">
-          <span>{valueLabel}</span>
-          <strong>{formatUsdValue(valueAmount)}</strong>
-        </div>
-        <div className="position-metric">
-          <span>买入价格</span>
-          <strong>{formatPrice(position.entryPrice)}</strong>
-        </div>
-        <div className="position-metric">
-          <span>{isClosed ? '卖出价格' : '当前价格'}</span>
-          <strong>{formatPrice(valuePrice)}</strong>
-        </div>
-        <div className="position-metric">
-          <span>买入数量</span>
-          <strong>{formatTokenAmount(position.tokenAmount)}</strong>
-        </div>
-        <div className="position-metric">
-          <span>信号 / 评分</span>
-          <strong>
-            #{position.entrySignalCount} / {position.tradeScore ?? '--'}
-          </strong>
-        </div>
-      </div>
-
-      <div className="position-card-footer">
-        <div className="position-card-meta">
-          <span>{isClosed ? `开仓 ${formatTime(position.openedAt)}` : `开仓时间 ${formatTime(position.openedAt)}`}</span>
-          <span>{isClosed ? `平仓 ${formatTime(position.closedAt)}` : `TP +${position.takeProfitPct}% / SL -${position.stopLossPct}%`}</span>
-          <span>{isClosed ? `原因 ${position.closeReason || '--'}` : `聪明钱 ${position.smartMoney ?? '--'} / 买卖比 ${position.buySellRatio ?? '--'}`}</span>
-        </div>
-        <ExternalLinks address={position.address} />
-      </div>
-    </article>
-  );
-}
-
 function AlertRow({ alert, copiedKey, onCopy, liveUpdatedAt, streamConnected }) {
   const copyId = `alert-${alert.address}-${alert.latestPushedAt || alert.pushedAt}`;
 
   return (
-    <div className="virtual-row-inner alert-grid">
+    <>
       <div className="virtual-cell">
         <div className="token-main">
           <strong>{alert.name}</strong>
@@ -361,7 +124,7 @@ function AlertRow({ alert, copiedKey, onCopy, liveUpdatedAt, streamConnected }) 
           <div className="live-row">
             <span className={`live-badge compact-live ${streamConnected ? 'connected' : 'disconnected'}`}>
               <span className="live-dot" />
-              {streamConnected ? '实时' : '重连'}
+              {streamConnected ? '实时' : '连接中'}
             </span>
             <span className="live-time">更新 {formatTime(liveUpdatedAt)}</span>
           </div>
@@ -419,68 +182,47 @@ function AlertRow({ alert, copiedKey, onCopy, liveUpdatedAt, streamConnected }) 
           telegram={alert.telegram}
         />
       </div>
-    </div>
+    </>
   );
 }
 
 function VirtualAlertList({ alerts, copiedKey, onCopy, liveUpdatedAt, streamConnected }) {
-  const [scrollTop, setScrollTop] = useState(0);
-
-  useEffect(() => {
-    setScrollTop(0);
-  }, [alerts.length]);
-
-  const { startIndex, endIndex, visibleAlerts, totalHeight } = useMemo(() => {
-    const overscan = 4;
-    const start = Math.max(0, Math.floor(scrollTop / ALERT_ROW_HEIGHT) - overscan);
-    const visibleCount = Math.ceil(ALERT_LIST_HEIGHT / ALERT_ROW_HEIGHT) + overscan * 2;
-    const end = Math.min(alerts.length, start + visibleCount);
-    return {
-      startIndex: start,
-      endIndex: end,
-      visibleAlerts: alerts.slice(start, end),
-      totalHeight: alerts.length * ALERT_ROW_HEIGHT,
-    };
-  }, [alerts, scrollTop]);
-
   return (
-    <div className="virtual-shell">
-      <div className="virtual-table">
-        <div className="virtual-header alert-grid">
-          <div className="virtual-head-cell">代币</div>
-          <div className="virtual-head-cell">信号</div>
-          <div className="virtual-head-cell">动量</div>
-          <div className="virtual-head-cell">交易</div>
-          <div className="virtual-head-cell">市场</div>
-          <div className="virtual-head-cell">链接</div>
-        </div>
-        <div className="virtual-viewport" onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}>
-          <div className="virtual-spacer" style={{ height: totalHeight }}>
-            {visibleAlerts.map((alert, index) => {
-              const actualIndex = startIndex + index;
-              return (
-                <div
-                  key={`${alert.address}-${alert.signalCount}-${alert.latestPushedAt || alert.pushedAt}`}
-                  className="virtual-row"
-                  style={{ transform: `translateY(${actualIndex * ALERT_ROW_HEIGHT}px)` }}
-                >
-                  <AlertRow
-                    alert={alert}
-                    copiedKey={copiedKey}
-                    onCopy={onCopy}
-                    liveUpdatedAt={liveUpdatedAt}
-                    streamConnected={streamConnected}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-        <div className="virtual-footer">
-          显示 {alerts.length === 0 ? 0 : startIndex + 1}-{endIndex} / {alerts.length}
-        </div>
-      </div>
-    </div>
+    <VirtualListTable
+      items={alerts}
+      rowHeight={ALERT_ROW_HEIGHT}
+      height={ALERT_LIST_HEIGHT}
+      headers={[
+        { key: 'token', label: '代币' },
+        { key: 'signal', label: '信号' },
+        { key: 'momentum', label: '动量' },
+        { key: 'trade', label: '交易' },
+        { key: 'market', label: '市场' },
+        { key: 'links', label: '链接' },
+      ]}
+      headerClassName="alert-grid"
+      rowClassName="alert-grid"
+      minTableWidth={980}
+      getItemKey={(alert) => `${alert.address}-${alert.signalCount}-${alert.latestPushedAt || alert.pushedAt}`}
+      renderRow={(alert) => (
+        <AlertRow
+          alert={alert}
+          copiedKey={copiedKey}
+          onCopy={onCopy}
+          liveUpdatedAt={liveUpdatedAt}
+          streamConnected={streamConnected}
+        />
+      )}
+    />
+  );
+}
+
+function SortButton({ label, active, direction, onClick }) {
+  return (
+    <button type="button" className={`sort-chip ${active ? 'active' : ''}`} onClick={onClick}>
+      <span>{label}</span>
+      <strong>{active ? (direction === 'asc' ? '↑' : '↓') : '↕'}</strong>
+    </button>
   );
 }
 
@@ -491,6 +233,13 @@ export default function Page() {
   const [countdown, setCountdown] = useState(POLL_SECONDS);
   const [copiedKey, setCopiedKey] = useState('');
   const [streamConnected, setStreamConnected] = useState(false);
+  const [sortKey, setSortKey] = useState('latestPushedAt');
+  const [sortDirection, setSortDirection] = useState('desc');
+  const [headerMeta, setHeaderMeta] = useState({
+    strategyRuntimeLabel: '',
+    strategyRuntimeSeconds: 0,
+    strategyStartedAt: '',
+  });
 
   useEffect(() => {
     let disposed = false;
@@ -509,6 +258,11 @@ export default function Page() {
 
         if (!disposed) {
           setData(json);
+          setHeaderMeta((current) => ({
+            strategyRuntimeLabel: json.strategyRuntimeLabel || current.strategyRuntimeLabel,
+            strategyRuntimeSeconds: json.strategyRuntimeSeconds ?? current.strategyRuntimeSeconds,
+            strategyStartedAt: json.strategyStartedAt || current.strategyStartedAt,
+          }));
           setLoading(false);
           setCountdown(POLL_SECONDS);
         }
@@ -545,6 +299,11 @@ export default function Page() {
       try {
         const json = JSON.parse(event.data);
         setData(json);
+        setHeaderMeta((current) => ({
+          strategyRuntimeLabel: json.strategyRuntimeLabel || current.strategyRuntimeLabel,
+          strategyRuntimeSeconds: json.strategyRuntimeSeconds ?? current.strategyRuntimeSeconds,
+          strategyStartedAt: json.strategyStartedAt || current.strategyStartedAt,
+        }));
         setStreamConnected(true);
         setLoading(false);
       } catch {
@@ -571,8 +330,80 @@ export default function Page() {
   }, []);
 
   const alerts = data?.alerts || [];
-  const paperPositions = data?.paperPositions || [];
-  const closedPaperPositions = data?.closedPaperPositions || [];
+  const sortedAlerts = useMemo(() => {
+    const rows = [...alerts];
+    rows.sort((left, right) => {
+      let leftValue;
+      let rightValue;
+
+      switch (sortKey) {
+        case 'occurrenceCount':
+          leftValue = left.occurrenceCount || left.signalCount || 0;
+          rightValue = right.occurrenceCount || right.signalCount || 0;
+          break;
+        case 'smartMoney':
+          leftValue = left.smartMoney || 0;
+          rightValue = right.smartMoney || 0;
+          break;
+        case 'tradeScore':
+          leftValue = left.tradeScore || 0;
+          rightValue = right.tradeScore || 0;
+          break;
+        case 'pctGain':
+          leftValue = left.pctGain || 0;
+          rightValue = right.pctGain || 0;
+          break;
+        case 'volume':
+          leftValue = left.volume || 0;
+          rightValue = right.volume || 0;
+          break;
+        default:
+          leftValue = new Date(left.latestPushedAt || left.pushedAt || 0).getTime();
+          rightValue = new Date(right.latestPushedAt || right.pushedAt || 0).getTime();
+          break;
+      }
+
+      if (leftValue === rightValue) {
+        return (right.smartMoney || 0) - (left.smartMoney || 0);
+      }
+
+      return sortDirection === 'asc' ? leftValue - rightValue : rightValue - leftValue;
+    });
+    return rows;
+  }, [alerts, sortDirection, sortKey]);
+
+  const miniStatusCards = [
+    { label: '网络', value: 'Solana', iconSrc: '/chains/solana.jpg', iconAlt: 'Solana' },
+    {
+      label: '策略运行',
+      value: headerMeta.strategyRuntimeLabel || formatDuration(headerMeta.strategyRuntimeSeconds ?? 0),
+    },
+    {
+      label: '启动时间',
+      value: headerMeta.strategyStartedAt ? formatTime(headerMeta.strategyStartedAt) : '--',
+    },
+    {
+      label: '实时状态',
+      value: streamConnected ? '已连接' : '连接中',
+      tone: streamConnected ? 'positive' : 'warning',
+    },
+    {
+      label: '实时更新',
+      value: { seconds: countdown, total: POLL_SECONDS },
+    },
+  ];
+
+  function handleSort(nextKey) {
+    setSortKey((currentKey) => {
+      if (currentKey === nextKey) {
+        setSortDirection((currentDirection) => (currentDirection === 'desc' ? 'asc' : 'desc'));
+        return currentKey;
+      }
+
+      setSortDirection('desc');
+      return nextKey;
+    });
+  }
 
   async function handleCopy(value, key) {
     try {
@@ -588,21 +419,7 @@ export default function Page() {
 
   return (
     <main className="page-shell">
-      <section className="topbar">
-        <div>
-          <p className="eyebrow">GMGN SOL MEME RADAR</p>
-          <h1>信号与纸上交易面板</h1>
-        </div>
-        <div className="topbar-meta">
-          <span>SOL</span>
-          <span>策略已运行 {data?.strategyRuntimeLabel || formatDuration(data?.strategyRuntimeSeconds ?? 0)}</span>
-          <span>{data?.strategyStartedAt ? `启动 ${formatTime(data.strategyStartedAt)}` : '启动 --'}</span>
-          <span>{streamConnected ? '实时已连接' : '实时重连中'}</span>
-          <span>{countdown}s 全量补扫</span>
-          <span>{data?.liveUpdatedAt ? `实时 ${new Date(data.liveUpdatedAt).toLocaleTimeString()}` : '--'}</span>
-          <span>{data?.scannedAt ? `扫描 ${new Date(data.scannedAt).toLocaleTimeString()}` : '--'}</span>
-        </div>
-      </section>
+      <AppHeader title="最新信号" navKey="pulse" statusCards={miniStatusCards} />
 
       <section className="stats-strip">
         <div className="stat-pill highlight">
@@ -641,98 +458,65 @@ export default function Page() {
         </div>
       </section>
 
-      <section className="portfolio-grid">
-        <div className="panel portfolio-panel">
-          <div className="panel-header compact-header">
-            <div>
-              <h2>持仓中</h2>
-              <p>当前打开中的纸上持仓，集中看买入金额、当前市值和浮动盈亏</p>
-            </div>
-          </div>
-          <div className="summary-metrics">
-            <SummaryMetric label="买入总金额" value={formatUsdValue(data?.paperSummary?.openCostUsd ?? 0)} />
-            <SummaryMetric label="当前总市值" value={formatUsdValue(data?.paperSummary?.openValueUsd ?? 0)} />
-            <SummaryMetric
-              label="浮动总盈亏"
-              value={formatUsd(data?.paperSummary?.openPnLUsd ?? 0)}
-              tone={(data?.paperSummary?.openPnLUsd ?? 0) >= 0 ? 'positive' : 'negative'}
-            />
-          </div>
-
-          {!loading && !error && paperPositions.length === 0 ? (
-            <div className="empty-state compact-empty">当前没有打开中的持仓。</div>
-          ) : null}
-
-          {paperPositions.length > 0 ? (
-            <div className="position-card-list">
-              {paperPositions.map((position) => (
-                <PaperPositionCard
-                  key={`position-${position.id}`}
-                  position={position}
-                  copiedKey={copiedKey}
-                  onCopy={handleCopy}
-                  streamConnected={streamConnected}
-                  liveUpdatedAt={data?.liveUpdatedAt}
-                />
-              ))}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="panel portfolio-panel">
-          <div className="panel-header compact-header">
-            <div>
-              <h2>已平仓</h2>
-              <p>保留最终卖出结果，方便复盘累计买入、累计卖出和已实现盈亏</p>
-            </div>
-          </div>
-          <div className="summary-metrics">
-            <SummaryMetric label="累计买入" value={formatUsdValue(data?.paperSummary?.closedCostUsd ?? 0)} />
-            <SummaryMetric label="累计卖出" value={formatUsdValue(data?.paperSummary?.closedValueUsd ?? 0)} />
-            <SummaryMetric
-              label="已实现总盈亏"
-              value={formatUsd(data?.paperSummary?.closedPnLUsd ?? 0)}
-              tone={(data?.paperSummary?.closedPnLUsd ?? 0) >= 0 ? 'positive' : 'negative'}
-            />
-          </div>
-
-          {!loading && !error && closedPaperPositions.length === 0 ? (
-            <div className="empty-state compact-empty">当前还没有已平仓记录。</div>
-          ) : null}
-
-          {closedPaperPositions.length > 0 ? (
-            <div className="position-card-list">
-              {closedPaperPositions.map((position) => (
-                <PaperPositionCard
-                  key={`closed-${position.id}`}
-                  position={position}
-                  type="closed"
-                  copiedKey={copiedKey}
-                  onCopy={handleCopy}
-                />
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </section>
-
-      <section className="panel">
+      <section className="panel stable-list-panel">
         <div className="panel-header compact-header">
           <div>
-            <h2>推送 Token</h2>
-            <p>固定高度虚拟列表，仅渲染可视区域，避免数据量大时页面卡顿</p>
+            <h2>推送列表</h2>
           </div>
         </div>
 
-        {loading ? <div className="empty-state">正在加载扫描结果...</div> : null}
+        <div className="sort-toolbar">
+          <SortButton
+            label="最近触发"
+            active={sortKey === 'latestPushedAt'}
+            direction={sortDirection}
+            onClick={() => handleSort('latestPushedAt')}
+          />
+          <SortButton
+            label="信号次数"
+            active={sortKey === 'occurrenceCount'}
+            direction={sortDirection}
+            onClick={() => handleSort('occurrenceCount')}
+          />
+          <SortButton
+            label="聪明钱"
+            active={sortKey === 'smartMoney'}
+            direction={sortDirection}
+            onClick={() => handleSort('smartMoney')}
+          />
+          <SortButton
+            label="交易分数"
+            active={sortKey === 'tradeScore'}
+            direction={sortDirection}
+            onClick={() => handleSort('tradeScore')}
+          />
+          <SortButton
+            label="累计涨幅"
+            active={sortKey === 'pctGain'}
+            direction={sortDirection}
+            onClick={() => handleSort('pctGain')}
+          />
+          <SortButton
+            label="成交量"
+            active={sortKey === 'volume'}
+            direction={sortDirection}
+            onClick={() => handleSort('volume')}
+          />
+        </div>
+
+        {loading ? (
+          <div className="list-loading-wrap">
+            <LoadingBlock title="Loading" description="正在加载推送列表..." />
+          </div>
+        ) : null}
         {error ? <div className="error-state">{error}</div> : null}
-        {!loading && !error && alerts.length === 0 ? (
+        {!loading && !error && sortedAlerts.length === 0 ? (
           <div className="empty-state">当前没有新的推送结果，等待下一轮扫描。</div>
         ) : null}
 
-        {alerts.length > 0 ? (
+        {sortedAlerts.length > 0 ? (
           <VirtualAlertList
-            alerts={alerts}
+            alerts={sortedAlerts}
             copiedKey={copiedKey}
             onCopy={handleCopy}
             liveUpdatedAt={data?.liveUpdatedAt}
@@ -740,6 +524,8 @@ export default function Page() {
           />
         ) : null}
       </section>
+
+      <AppFooter />
     </main>
   );
 }

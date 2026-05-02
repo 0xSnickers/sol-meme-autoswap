@@ -1,7 +1,7 @@
 {
-  "name": "gmgn-api",
+  "name": "automated-trading-meme",
   "version": "1.0.0",
-  "description": "Minimal Node.js wrapper for GMGN CLI",
+  "description": "Automated trading meme dashboard with SOL radar and paper trading",
   "type": "module",
   "main": "src/trading-radar.js",
   "scripts": {

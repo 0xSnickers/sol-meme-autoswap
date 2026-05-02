@@ -1,4 +1,4 @@
-# sol-meme-autoswap
+# automated-trading-meme
 
 一个面向 `SOL Meme` 的 GMGN 雷达与纸上交易看板。
 
