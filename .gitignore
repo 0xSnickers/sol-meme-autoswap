@@ -9,6 +9,7 @@ coverage/
 .env.*.local
 
 .radar-data/
+.signal-scan-data/
 *.log
 
 gmgn-Ed25519-key/
