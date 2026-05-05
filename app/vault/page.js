@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import AppFooter from '../components/AppFooter';
 import AppHeader from '../components/AppHeader';
 import { PortfolioSection } from '../components/PortfolioCards';
@@ -8,8 +8,31 @@ import { formatDuration, formatTime, formatUsd, formatUsdValue } from '../compon
 
 const POLL_SECONDS = 30;
 
+function buildPaperTradeSettings(config = {}) {
+  const fallbackTakeProfitSteps = Array.isArray(config?.paperTakeProfitSteps)
+    ? config.paperTakeProfitSteps
+    : [
+        { targetPercent: 40, sellPercent: 50 },
+        { targetPercent: 100, sellPercent: 30 },
+      ];
+
+  const settings = config?.paperTradeSettings || {};
+  const takeProfitSteps =
+    Array.isArray(settings.takeProfitSteps) && settings.takeProfitSteps.length > 0
+      ? settings.takeProfitSteps
+      : fallbackTakeProfitSteps;
+
+  return {
+    stopLossPercent: Number(settings.stopLossPercent ?? config.paperStopLossPercent ?? 40),
+    trailingStartPercent: Number(settings.trailingStartPercent ?? config.paperTrailingStartPercent ?? 70),
+    trailingStopPercent: Number(settings.trailingStopPercent ?? config.paperTrailingStopPercent ?? 20),
+    timeStopHours: Number(settings.timeStopHours ?? config.paperTimeStopHours ?? 12),
+    takeProfitSteps,
+  };
+}
+
 async function loadSnapshot() {
-  const response = await fetch('/api/radar/scan?limit=200', { cache: 'no-store' });
+  const response = await fetch('/api/signals/snapshot?limit=200', { cache: 'no-store' });
   if (!response.ok) {
     throw new Error('读取持仓数据失败');
   }
@@ -28,22 +51,69 @@ export default function VaultPage() {
     strategyRuntimeSeconds: 0,
     strategyStartedAt: '',
   });
+  const lastScrollYRef = useRef(0);
+  const streamConnectedRef = useRef(false);
+
+  useEffect(() => {
+    streamConnectedRef.current = streamConnected;
+  }, [streamConnected]);
+
+  function applySnapshot(json) {
+    setData(json);
+    setHeaderMeta((current) => ({
+      strategyRuntimeLabel: json.strategyRuntimeLabel || current.strategyRuntimeLabel,
+      strategyRuntimeSeconds: json.strategyRuntimeSeconds ?? current.strategyRuntimeSeconds,
+      strategyStartedAt: json.strategyStartedAt || current.strategyStartedAt,
+    }));
+    setError('');
+    setLoading(false);
+    preserveScrollAfterUpdate();
+  }
+
+  function preserveScrollAfterUpdate() {
+    const nextScrollY = lastScrollYRef.current;
+    window.requestAnimationFrame(() => {
+      if (Math.abs(window.scrollY - nextScrollY) > 4) {
+        window.scrollTo({ top: nextScrollY, behavior: 'auto' });
+      }
+    });
+  }
+
+  useEffect(() => {
+    if ('scrollRestoration' in window.history) {
+      const previous = window.history.scrollRestoration;
+      window.history.scrollRestoration = 'manual';
+      return () => {
+        window.history.scrollRestoration = previous;
+      };
+    }
+    return undefined;
+  }, []);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      lastScrollYRef.current = window.scrollY;
+    };
+
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
 
     async function fetchData() {
       try {
+        if (streamConnectedRef.current) {
+          return;
+        }
+
         const json = await loadSnapshot();
         if (!cancelled) {
-          setData(json);
-          setHeaderMeta((current) => ({
-            strategyRuntimeLabel: json.strategyRuntimeLabel || current.strategyRuntimeLabel,
-            strategyRuntimeSeconds: json.strategyRuntimeSeconds ?? current.strategyRuntimeSeconds,
-            strategyStartedAt: json.strategyStartedAt || current.strategyStartedAt,
-          }));
-          setError('');
-          setLoading(false);
+          applySnapshot(json);
           setCountdown(POLL_SECONDS);
         }
       } catch (requestError) {
@@ -70,7 +140,7 @@ export default function VaultPage() {
 
   useEffect(() => {
     let disposed = false;
-    const source = new EventSource('/api/radar/stream?limit=200');
+    const source = new EventSource('/api/signals/stream?limit=200');
 
     source.addEventListener('snapshot', (event) => {
       if (disposed) {
@@ -79,14 +149,8 @@ export default function VaultPage() {
 
       try {
         const json = JSON.parse(event.data);
-        setData(json);
-        setHeaderMeta((current) => ({
-          strategyRuntimeLabel: json.strategyRuntimeLabel || current.strategyRuntimeLabel,
-          strategyRuntimeSeconds: json.strategyRuntimeSeconds ?? current.strategyRuntimeSeconds,
-          strategyStartedAt: json.strategyStartedAt || current.strategyStartedAt,
-        }));
+        applySnapshot(json);
         setStreamConnected(true);
-        setLoading(false);
       } catch {
         setStreamConnected(false);
       }
@@ -124,6 +188,12 @@ export default function VaultPage() {
 
   const paperPositions = data?.paperPositions || [];
   const closedPaperPositions = data?.closedPaperPositions || [];
+  const hasOpenPositions = paperPositions.length > 0;
+  const floatingPnlReady = !hasOpenPositions || Boolean(data?.liveUpdatedAt);
+  const currentStrategy = buildPaperTradeSettings(data?.config);
+  const takeProfitSummary = currentStrategy.takeProfitSteps
+    .map((step, index) => `TP${index + 1} +${step.targetPercent}%/${step.sellPercent}%`)
+    .join(' · ');
 
   return (
     <main className="page-shell">
@@ -151,7 +221,7 @@ export default function VaultPage() {
 
       <section className="stats-strip">
         <div className="stat-pill highlight">
-          <span>账户权益</span>
+          <span>帐户余额</span>
           <strong className={(data?.paperSummary?.totalPnLUsd ?? 0) >= 0 ? 'positive' : 'negative nowrap-value'}>
             {formatUsdValue(data?.paperSummary?.equityUsd ?? 0)}
           </strong>
@@ -162,8 +232,16 @@ export default function VaultPage() {
         </div>
         <div className="stat-pill">
           <span>浮动盈亏</span>
-          <strong className={(data?.paperSummary?.openPnLUsd ?? 0) >= 0 ? 'positive' : 'negative'}>
-            {formatUsd(data?.paperSummary?.openPnLUsd ?? 0)}
+          <strong
+            className={
+              floatingPnlReady
+                ? (data?.paperSummary?.openPnLUsd ?? 0) >= 0
+                  ? 'positive'
+                  : 'negative'
+                : ''
+            }
+          >
+            {floatingPnlReady ? formatUsd(data?.paperSummary?.openPnLUsd ?? 0) : '--'}
           </strong>
         </div>
         <div className="stat-pill">
@@ -174,20 +252,42 @@ export default function VaultPage() {
         </div>
       </section>
 
+      <section className="panel strategy-summary-panel compact-strategy-panel">
+        <div className="panel-header compact-header">
+          <div>
+            <h2>当前策略</h2>
+            <p className="panel-subtitle">当前只保留核心规则摘要，方便快速查看持仓逻辑。</p>
+          </div>
+        </div>
+        <div className="strategy-pill-row">
+          <span className="strategy-pill">{takeProfitSummary || '止盈规则 --'}</span>
+          <span className="strategy-pill">止损 {currentStrategy.stopLossPercent > 0 ? `-${currentStrategy.stopLossPercent}%` : '--'}</span>
+          <span className="strategy-pill">
+            移动止盈 +{currentStrategy.trailingStartPercent}% / 回撤 {currentStrategy.trailingStopPercent}%
+          </span>
+          <span className="strategy-pill">{currentStrategy.timeStopHours}h 未到 TP1 退出</span>
+        </div>
+      </section>
+
       {error ? <div className="panel error-state panel-gap">{error}</div> : null}
 
       {!error ? (
         <section className="portfolio-grid">
           <PortfolioSection
             title="当前持仓"
+            count={paperPositions.length}
             emptyText="当前没有打开中的持仓。"
             metrics={[
               { label: '买入总金额', value: formatUsdValue(data?.paperSummary?.openCostUsd ?? 0) },
               { label: '当前总市值', value: formatUsdValue(data?.paperSummary?.openValueUsd ?? 0) },
               {
                 label: '浮动总盈亏',
-                value: formatUsd(data?.paperSummary?.openPnLUsd ?? 0),
-                tone: (data?.paperSummary?.openPnLUsd ?? 0) >= 0 ? 'positive' : 'negative',
+                value: floatingPnlReady ? formatUsd(data?.paperSummary?.openPnLUsd ?? 0) : '--',
+                tone: floatingPnlReady
+                  ? (data?.paperSummary?.openPnLUsd ?? 0) >= 0
+                    ? 'positive'
+                    : 'negative'
+                  : 'neutral',
               },
             ]}
             positions={paperPositions}
@@ -195,11 +295,12 @@ export default function VaultPage() {
             copiedKey={copiedKey}
             onCopy={handleCopy}
             streamConnected={streamConnected}
-            liveUpdatedAt={data?.liveUpdatedAt}
+            floatingPnlReady={floatingPnlReady}
           />
 
           <PortfolioSection
             title="已平仓"
+            count={closedPaperPositions.length}
             emptyText="当前还没有已平仓记录。"
             metrics={[
               { label: '累计买入', value: formatUsdValue(data?.paperSummary?.closedCostUsd ?? 0) },

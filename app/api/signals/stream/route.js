@@ -1,4 +1,4 @@
-import { getRealtimeRadarSnapshot } from '../../../../src/trading-radar.js';
+import { getRealtimeSignalSnapshot } from '../../../../src/signal-scanner.js';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,6 +18,20 @@ export async function GET(request) {
       let pushing = false;
       let streamTimer = null;
       let heartbeatTimer = null;
+
+      const safeEnqueue = (payload) => {
+        if (closed) {
+          return false;
+        }
+
+        try {
+          controller.enqueue(payload);
+          return true;
+        } catch {
+          closed = true;
+          return false;
+        }
+      };
 
       const cleanup = () => {
         if (closed) {
@@ -44,12 +58,10 @@ export async function GET(request) {
 
         pushing = true;
         try {
-          const snapshot = await getRealtimeRadarSnapshot(safeLimit);
-          controller.enqueue(
-            encoder.encode(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`)
-          );
+          const snapshot = await getRealtimeSignalSnapshot(safeLimit);
+          safeEnqueue(encoder.encode(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`));
         } catch (error) {
-          controller.enqueue(
+          safeEnqueue(
             encoder.encode(
               `event: stream-error\ndata: ${JSON.stringify({
                 error: error instanceof Error ? error.message : '实时推送失败',
@@ -66,9 +78,7 @@ export async function GET(request) {
         void pushSnapshot();
       }, STREAM_INTERVAL_MS);
       heartbeatTimer = setInterval(() => {
-        if (!closed) {
-          controller.enqueue(encoder.encode(': heartbeat\n\n'));
-        }
+        safeEnqueue(encoder.encode(': heartbeat\n\n'));
       }, HEARTBEAT_INTERVAL_MS);
 
       request.signal.addEventListener('abort', cleanup);

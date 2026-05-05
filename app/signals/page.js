@@ -4,11 +4,12 @@ import { useEffect, useMemo, useState } from 'react';
 import AppFooter from '../components/AppFooter';
 import AppHeader from '../components/AppHeader';
 import LoadingBlock from '../components/LoadingBlock';
+import TokenSignalTimeline from '../components/TokenSignalTimeline';
 import VirtualListTable from '../components/VirtualListTable';
 import { AddressCopy, ExternalLinks } from '../components/token-ui';
 
 const REFRESH_SECONDS = 30;
-const SIGNAL_ROW_HEIGHT = 132;
+const SIGNAL_ROW_HEIGHT = 196;
 const SIGNAL_LIST_HEIGHT = 680;
 
 function formatMoney(value) {
@@ -102,7 +103,7 @@ export default function SignalsPage() {
 
     async function loadSignals() {
       try {
-        const response = await fetch('/api/radar/scan?limit=120', {
+        const response = await fetch('/api/signals/snapshot?limit=120', {
           cache: 'no-store',
         });
         const json = await response.json();
@@ -322,11 +323,12 @@ export default function SignalsPage() {
               { key: 'trade', label: '交易分数' },
               { key: 'status', label: '状态' },
               { key: 'market', label: '市场' },
+              { key: 'timeline', label: '触发图表' },
               { key: 'time', label: '最近触发' },
             ]}
             headerClassName="signal-grid"
             rowClassName="signal-grid"
-            minTableWidth={1120}
+            minTableWidth={1360}
             getItemKey={(alert) => `${alert.chain}:${alert.address}`}
             renderRow={(alert) => {
               const copyId = `signal-${alert.address}`;
@@ -376,6 +378,9 @@ export default function SignalsPage() {
                     <strong>流动性 ${formatMoney(alert.liq || 0)}</strong>
                     <p>1h量 ${formatMoney(alert.volume || 0)}</p>
                     <p>买卖比 {alert.buySellRatio ?? '--'}</p>
+                  </div>
+                  <div className="virtual-cell timeline-cell">
+                    <TokenSignalTimeline history={alert.signalHistory || []} />
                   </div>
                   <div className="virtual-cell">
                     <strong>{formatTime(alert.latestPushedAt || alert.pushedAt)}</strong>

@@ -4,12 +4,12 @@ import { useEffect, useMemo, useState } from 'react';
 import AppFooter from './components/AppFooter';
 import AppHeader from './components/AppHeader';
 import LoadingBlock from './components/LoadingBlock';
+import TokenSignalTimeline from './components/TokenSignalTimeline';
 import VirtualListTable from './components/VirtualListTable';
 import { AddressCopy, ExternalLinks } from './components/token-ui';
 
 const POLL_SECONDS = 30;
-const MAX_HISTORY_ITEMS = 3;
-const ALERT_ROW_HEIGHT = 152;
+const ALERT_ROW_HEIGHT = 196;
 const ALERT_LIST_HEIGHT = 620;
 
 function formatMoney(value) {
@@ -112,22 +112,27 @@ function formatDecisionLabel(value) {
   }
 }
 
-function AlertRow({ alert, copiedKey, onCopy, liveUpdatedAt, streamConnected }) {
+function formatTakeProfitSteps(steps = []) {
+  return (steps || [])
+    .map((step) => `+${step.targetPercent}%/${step.sellPercent}%`)
+    .join(' · ');
+}
+
+function AlertRow({ alert, copiedKey, onCopy, streamConnected }) {
   const copyId = `alert-${alert.address}-${alert.latestPushedAt || alert.pushedAt}`;
 
   return (
     <>
       <div className="virtual-cell">
         <div className="token-main">
-          <strong>{alert.name}</strong>
-          <p>{alert.symbol} · {alert.ageHours}h</p>
-          <div className="live-row">
-            <span className={`live-badge compact-live ${streamConnected ? 'connected' : 'disconnected'}`}>
+          <div className="token-title-row">
+            <strong>{alert.name}</strong>
+            <span className={`live-badge compact-live token-live-badge ${streamConnected ? 'connected' : 'disconnected'}`}>
               <span className="live-dot" />
               {streamConnected ? '实时' : '连接中'}
             </span>
-            <span className="live-time">更新 {formatTime(liveUpdatedAt)}</span>
           </div>
+          <p>{alert.symbol} · {alert.ageHours}h</p>
           <AddressCopy
             address={alert.address}
             copyId={copyId}
@@ -137,21 +142,10 @@ function AlertRow({ alert, copiedKey, onCopy, liveUpdatedAt, streamConnected }) 
           <p className="token-subtle">现价 {formatPrice(alert.price)}</p>
         </div>
       </div>
-      <div className="virtual-cell">
+      <div className="virtual-cell timeline-cell">
         <strong>累计 {alert.occurrenceCount || alert.signalCount} 次</strong>
         <p>最近: {formatTime(alert.latestPushedAt || alert.pushedAt)}</p>
-        <div className="history-list">
-          {(alert.signalHistory || []).slice(0, MAX_HISTORY_ITEMS).map((item) => (
-            <span key={`${alert.address}-${item.signalCount}-${item.pushedAt}`} className="history-chip">
-              #{item.signalCount} {formatTime(item.pushedAt)} · {formatPrice(item.price)}
-            </span>
-          ))}
-          {(alert.signalHistory || []).length > MAX_HISTORY_ITEMS ? (
-            <span className="history-chip muted-chip">
-              +{alert.signalHistory.length - MAX_HISTORY_ITEMS}
-            </span>
-          ) : null}
-        </div>
+        <TokenSignalTimeline history={alert.signalHistory || []} compact />
       </div>
       <div className="virtual-cell">
         <span className="status status-triggered">已触发</span>
@@ -165,7 +159,9 @@ function AlertRow({ alert, copiedKey, onCopy, liveUpdatedAt, streamConnected }) 
           {alert.paperPnLPct != null ? (
             <span className="history-chip">PnL {formatPercent(alert.paperPnLPct)}</span>
           ) : null}
-          <span className="history-chip">TP +{alert.paperTakeProfitPct ?? 20}%</span>
+          <span className="history-chip">
+            TP {formatTakeProfitSteps(alert.paperTakeProfitSteps || [{ targetPercent: 40, sellPercent: 50 }])}
+          </span>
           <span className="history-chip">SL -{alert.paperStopLossPct ?? 50}%</span>
         </div>
       </div>
@@ -186,7 +182,7 @@ function AlertRow({ alert, copiedKey, onCopy, liveUpdatedAt, streamConnected }) 
   );
 }
 
-function VirtualAlertList({ alerts, copiedKey, onCopy, liveUpdatedAt, streamConnected }) {
+function VirtualAlertList({ alerts, copiedKey, onCopy, streamConnected }) {
   return (
     <VirtualListTable
       items={alerts}
@@ -209,7 +205,6 @@ function VirtualAlertList({ alerts, copiedKey, onCopy, liveUpdatedAt, streamConn
           alert={alert}
           copiedKey={copiedKey}
           onCopy={onCopy}
-          liveUpdatedAt={liveUpdatedAt}
           streamConnected={streamConnected}
         />
       )}
@@ -247,7 +242,7 @@ export default function Page() {
     async function load() {
       try {
         setError('');
-        const response = await fetch('/api/radar/scan?limit=200', {
+        const response = await fetch('/api/signals/snapshot?limit=200', {
           cache: 'no-store',
         });
         const json = await response.json();
@@ -289,7 +284,7 @@ export default function Page() {
 
   useEffect(() => {
     let disposed = false;
-    const source = new EventSource('/api/radar/stream?limit=200');
+    const source = new EventSource('/api/signals/stream?limit=200');
 
     source.addEventListener('snapshot', (event) => {
       if (disposed) {
@@ -419,11 +414,15 @@ export default function Page() {
 
   return (
     <main className="page-shell">
-      <AppHeader title="最新信号" navKey="pulse" statusCards={miniStatusCards} />
+      <AppHeader
+        title="最新信号"
+        navKey="pulse"
+        statusCards={miniStatusCards}
+      />
 
       <section className="stats-strip">
         <div className="stat-pill highlight">
-          <span>账户权益</span>
+          <span>帐户余额</span>
           <strong className={(data?.paperSummary?.totalPnLUsd ?? 0) >= 0 ? 'positive' : 'negative nowrap-value'}>
             {formatUsdValue(data?.paperSummary?.equityUsd ?? 0)}
           </strong>
@@ -519,7 +518,6 @@ export default function Page() {
             alerts={sortedAlerts}
             copiedKey={copiedKey}
             onCopy={handleCopy}
-            liveUpdatedAt={data?.liveUpdatedAt}
             streamConnected={streamConnected}
           />
         ) : null}

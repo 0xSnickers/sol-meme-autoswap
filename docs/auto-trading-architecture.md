@@ -27,7 +27,7 @@
 
 当前对应:
 
-- `src/trading-radar.js`
+- `src/signal-scanner.js`
 
 后续建议拆分:
 
@@ -87,7 +87,7 @@
 当前已经有:
 
 - `pushed_alerts`
-- `radar_meta`
+- `signal_scan_meta`
 
 后续建议新增表:
 
@@ -173,10 +173,10 @@
 ```text
 app/
   api/
-    radar/
-      scan/
+    signals/
+      snapshot/
 src/
-  trading-radar.js
+  signal-scanner.js
   modules/
     signals/
     persistence/

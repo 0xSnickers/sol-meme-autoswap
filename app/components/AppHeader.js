@@ -44,7 +44,7 @@ function ChainMiniStatusCard({ label, value, iconSrc, iconAlt }) {
   );
 }
 
-export default function AppHeader({ title, navKey, statusCards = [] }) {
+export default function AppHeader({ title, navKey, statusCards = [], actions = null }) {
   return (
     <section className="topbar">
       <div className="topbar-left">
@@ -68,6 +68,7 @@ export default function AppHeader({ title, navKey, statusCards = [] }) {
               {item.label}
             </Link>
           ))}
+          {actions}
         </div>
       </div>
 
