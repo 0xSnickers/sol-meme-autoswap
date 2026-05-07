@@ -18,7 +18,7 @@ npm run signal:reset
 - `signal:once`
   - 只执行一轮信号扫描，适合本地调试或手动触发
 - `signal:cleanup`
-  - 手动清理 Supabase 中超出保留周期的旧数据，适合配合 `cron`、`launchd`、`pm2` 或云服务器定时任务
+  - 手动清理 SQLite / PostgreSQL 中超出保留周期的旧数据，适合配合 `cron`、`launchd`、`pm2` 或云服务器定时任务
 - `signal:reset`
   - 重置当前测试数据，适合切换新策略前清库重跑
 
@@ -27,7 +27,7 @@ npm run signal:reset
 本地单机策略验证，先在 `.env` 里设置：
 
 ```env
-SIGNAL_STORAGE_DRIVER=sqlite
+SIGNAL_DB_DRIVER=sqlite
 ```
 
 然后执行：
@@ -37,10 +37,11 @@ npm run dev
 npm run signal:worker
 ```
 
-如果后续需要用 Supabase 做共享存储，则把 `.env` 改成：
+如果后续需要切到 PostgreSQL，则把 `.env` 改成：
 
 ```env
-SIGNAL_STORAGE_DRIVER=supabase
+SIGNAL_DB_DRIVER=postgres
+SIGNAL_DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/postgres
 ```
 
 ## 建议环境变量
@@ -48,7 +49,7 @@ SIGNAL_STORAGE_DRIVER=supabase
 ```env
 SIGNAL_SCAN_INTERVAL=30
 SIGNAL_SCAN_ROW_LIMIT=60
-SIGNAL_STORAGE_DRIVER=sqlite
+SIGNAL_DB_DRIVER=sqlite
 ```
 
 兼容说明：

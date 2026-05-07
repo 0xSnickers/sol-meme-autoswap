@@ -14,9 +14,9 @@ function getArgValue(flag) {
 }
 
 const driverArg = String(getArgValue('--driver') || '').toLowerCase();
-if (driverArg === 'sqlite' || driverArg === 'supabase') {
-  process.env.SIGNAL_STORAGE_DRIVER = driverArg;
-  process.env.RADAR_STORAGE_DRIVER = driverArg;
+if (driverArg === 'sqlite' || driverArg === 'postgres') {
+  process.env.SIGNAL_DB_DRIVER = driverArg;
+  process.env.RADAR_DB_DRIVER = driverArg;
 }
 
 const scanIntervalSeconds = Number(
@@ -41,7 +41,7 @@ async function runRound() {
 
   const elapsedMs = Date.now() - startedAt;
   console.log(
-    `[signal-worker] 扫描完成: driver=${process.env.SIGNAL_STORAGE_DRIVER || process.env.RADAR_STORAGE_DRIVER || 'auto'} scanned=${result.scanned} found=${result.found} pushed=${result.pushed} elapsed=${elapsedMs}ms`
+    `[signal-worker] 扫描完成: driver=${process.env.SIGNAL_DB_DRIVER || process.env.RADAR_DB_DRIVER || 'auto'} scanned=${result.scanned} found=${result.found} pushed=${result.pushed} elapsed=${elapsedMs}ms`
   );
 }
 

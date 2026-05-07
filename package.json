@@ -8,9 +8,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "db:generate": "drizzle-kit generate",
+    "db:studio": "drizzle-kit studio",
     "signal:worker": "node scripts/signal-worker/run.js",
     "signal:once": "node scripts/signal-worker/run.js --once",
-    "signal:cleanup": "node scripts/maintenance/cleanup-supabase.js",
+    "signal:cleanup": "node scripts/maintenance/cleanup-signal-data.js",
     "signal:reset": "node scripts/maintenance/reset-signal-data.js",
     "telegram:test": "node scripts/telegram/test-bot.js"
   },
@@ -18,15 +20,20 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@supabase/supabase-js": "^2.105.1",
     "better-sqlite3": "^12.9.0",
     "bignumber.js": "^11.1.1",
     "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
     "echarts": "^6.0.0",
     "echarts-for-react": "^3.0.6",
     "next": "^16.2.4",
+    "postgres": "^3.4.9",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
+    "undici": "^7.25.0",
     "zod": "^4.4.1"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.10"
   }
 }

@@ -1,6 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { APP_CONFIG } from '../../src/config/app-config.js';
+import { useSignalSnapshot } from '../../src/modules/signals/client/use-signal-snapshot.js';
+import {
+  formatCompactTime,
+  formatMoney,
+  formatPercent,
+  formatPrice,
+  formatTime,
+} from '../../src/modules/signals/lib/signal-formatters.js';
 import AppFooter from '../components/AppFooter';
 import AppHeader from '../components/AppHeader';
 import LoadingBlock from '../components/LoadingBlock';
@@ -8,75 +17,9 @@ import TokenSignalTimeline, { ScoreWithTooltip } from '../components/TokenSignal
 import VirtualListTable from '../components/VirtualListTable';
 import { AddressCopy, ExternalLinks, TokenAvatar } from '../components/token-ui';
 
-const REFRESH_SECONDS = 30;
-const SIGNAL_ROW_HEIGHT = 278;
-const SIGNAL_LIST_HEIGHT = 680;
-
-function formatMoney(value) {
-  if (value == null || Number.isNaN(Number(value))) {
-    return '--';
-  }
-
-  return new Intl.NumberFormat('en-US', {
-    notation: Number(value) >= 100000 ? 'compact' : 'standard',
-    maximumFractionDigits: Number(value) >= 1000 ? 1 : 2,
-  }).format(Number(value));
-}
-
-function formatPrice(value) {
-  if (value == null || Number.isNaN(Number(value))) {
-    return '--';
-  }
-
-  const number = Number(value);
-  if (Math.abs(number) >= 1) {
-    return `$${number.toFixed(4)}`;
-  }
-  if (Math.abs(number) >= 0.01) {
-    return `$${number.toFixed(6)}`;
-  }
-  return `$${number.toFixed(8)}`;
-}
-
-function formatPercent(value) {
-  if (value == null || Number.isNaN(Number(value))) {
-    return '--';
-  }
-
-  const number = Number(value);
-  return `${number >= 0 ? '+' : ''}${number.toFixed(2)}%`;
-}
-
-function formatTime(value) {
-  if (!value) {
-    return '--';
-  }
-
-  return new Date(value).toLocaleString('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    hour12: false,
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-}
-
-function formatCompactTime(value) {
-  if (!value) {
-    return '--';
-  }
-
-  return new Date(value).toLocaleString('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    hour12: false,
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
+const REFRESH_SECONDS = APP_CONFIG.signals.pollSeconds;
+const SIGNAL_ROW_HEIGHT = APP_CONFIG.ui.signalRowHeight;
+const SIGNAL_LIST_HEIGHT = APP_CONFIG.ui.signalListHeight;
 
 function formatDecisionLabel(value) {
   switch (value) {
@@ -130,63 +73,15 @@ function SortButton({ label, active, direction, onClick }) {
 }
 
 export default function SignalsPage() {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [countdown, setCountdown] = useState(REFRESH_SECONDS);
   const [sortKey, setSortKey] = useState('latestPushedAt');
   const [sortDirection, setSortDirection] = useState('desc');
   const [query, setQuery] = useState('');
   const [copiedKey, setCopiedKey] = useState('');
-  const [headerMeta, setHeaderMeta] = useState({
-    strategyRuntimeLabel: '',
-    strategyStartedAt: '',
+  const { data, loading, error, countdown, headerMeta } = useSignalSnapshot({
+    limit: 120,
+    pollSeconds: REFRESH_SECONDS,
+    errorMessage: '读取信号统计失败',
   });
-
-  useEffect(() => {
-    let disposed = false;
-
-    async function loadSignals() {
-      try {
-        const response = await fetch('/api/signals/snapshot?limit=120', {
-          cache: 'no-store',
-        });
-        const json = await response.json();
-        if (!response.ok) {
-          throw new Error(json?.error || '读取信号统计失败');
-        }
-        if (!disposed) {
-          setData(json);
-          setHeaderMeta((current) => ({
-            strategyRuntimeLabel: json.strategyRuntimeLabel || current.strategyRuntimeLabel,
-            strategyStartedAt: json.strategyStartedAt || current.strategyStartedAt,
-          }));
-          setError('');
-          setLoading(false);
-          setCountdown(REFRESH_SECONDS);
-        }
-      } catch (requestError) {
-        if (!disposed) {
-          setError(requestError instanceof Error ? requestError.message : '读取信号统计失败');
-          setLoading(false);
-        }
-      }
-    }
-
-    void loadSignals();
-    const refreshTimer = window.setInterval(() => {
-      void loadSignals();
-    }, REFRESH_SECONDS * 1000);
-    const countdownTimer = window.setInterval(() => {
-      setCountdown((current) => (current <= 1 ? REFRESH_SECONDS : current - 1));
-    }, 1000);
-
-    return () => {
-      disposed = true;
-      clearInterval(refreshTimer);
-      clearInterval(countdownTimer);
-    };
-  }, []);
 
   const alerts = data?.alerts || [];
   const latestSignal = data?.latestSignal || alerts[0] || null;
@@ -448,7 +343,11 @@ export default function SignalsPage() {
                     <p>持有人 {formatMoney(alert.holders || 0)}</p>
                   </div>
                   <div className="virtual-cell">
-                    <ScoreWithTooltip score={alert.tradeScore ?? '--'} signal={alert} />
+                    <ScoreWithTooltip
+                      score={alert.tradeScore ?? '--'}
+                      signal={alert}
+                      snapshotConfig={data?.config}
+                    />
                     <p>{formatTradeActionLabel(alert)}</p>
                   </div>
                   <div className="virtual-cell">

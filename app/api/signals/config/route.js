@@ -1,16 +1,16 @@
 import { NextResponse } from 'next/server';
 import {
-  getPaperTradeSettingsLockState,
-  getStoredPaperTradeSettings,
-  updateStoredPaperTradeSettings,
-} from '../../../../src/signal-scanner.js';
+  readPaperTradeSettings,
+  readPaperTradeSettingsLockState,
+  savePaperTradeSettings,
+} from '../../../../src/modules/signals/server/signal-query-service.js';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const paperTradeSettings = await getStoredPaperTradeSettings();
+    const paperTradeSettings = await readPaperTradeSettings();
     return NextResponse.json({
       ok: true,
       paperTradeSettings,
@@ -29,7 +29,7 @@ export async function GET() {
 export async function PATCH(request) {
   try {
     const payload = await request.json();
-    const lockState = await getPaperTradeSettingsLockState();
+    const lockState = await readPaperTradeSettingsLockState();
     if (lockState.locked) {
       return NextResponse.json(
         {
@@ -40,9 +40,7 @@ export async function PATCH(request) {
       );
     }
 
-    const paperTradeSettings = await updateStoredPaperTradeSettings(payload, {
-      applyToOpenPositions: Boolean(payload?.applyToOpenPositions),
-    });
+    const paperTradeSettings = await savePaperTradeSettings(payload);
 
     return NextResponse.json({
       ok: true,

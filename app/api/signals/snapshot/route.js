@@ -1,16 +1,16 @@
 import { NextResponse } from 'next/server';
-import { getPersistedSignalSnapshot } from '../../../../src/signal-scanner.js';
+import { normalizeSignalLimit } from '../../../../src/config/app-config.js';
+import { readSignalSnapshot } from '../../../../src/modules/signals/server/signal-query-service.js';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
-  const rowLimit = Number(searchParams.get('limit') || 60);
-  const safeLimit = Number.isFinite(rowLimit) ? Math.min(Math.max(rowLimit, 10), 120) : 60;
+  const safeLimit = normalizeSignalLimit(searchParams.get('limit'));
 
   try {
-    const snapshot = await getPersistedSignalSnapshot(safeLimit);
+    const snapshot = await readSignalSnapshot(safeLimit);
     return NextResponse.json(snapshot, {
       headers: {
         'Cache-Control': 'no-store, max-age=0',

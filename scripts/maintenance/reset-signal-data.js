@@ -2,15 +2,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import dotenv from 'dotenv';
-import { createClient } from '@supabase/supabase-js';
+import { createDrizzleClient, resolveSignalDbDriver } from '../../src/shared/db/client/index.js';
 
 dotenv.config({ path: path.join(os.homedir(), '.env'), override: false });
 dotenv.config({ override: false });
 
 const DEFAULT_SQLITE_DIR = path.join(process.cwd(), '.signal-scan-data');
 const LEGACY_SQLITE_DIR = path.join(process.cwd(), '.radar-data');
-const SUPABASE_URL = process.env.SUPABASE_URL || '';
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 function getArgValue(flag) {
   const index = process.argv.indexOf(flag);
@@ -21,13 +19,9 @@ function getArgValue(flag) {
 }
 
 function resolveDriver() {
-  const raw =
-    getArgValue('--driver') ||
-    process.env.SIGNAL_STORAGE_DRIVER ||
-    process.env.RADAR_STORAGE_DRIVER ||
-    'both';
+  const raw = getArgValue('--driver') || process.env.SIGNAL_DB_DRIVER || process.env.RADAR_DB_DRIVER || 'both';
   const normalized = String(raw).toLowerCase();
-  return ['sqlite', 'supabase', 'both'].includes(normalized) ? normalized : 'both';
+  return ['sqlite', 'postgres', 'both'].includes(normalized) ? normalized : 'both';
 }
 
 function getSqliteDirs() {
@@ -57,109 +51,58 @@ function resetSqliteData() {
   };
 }
 
-function createSupabase() {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error('缺少 SUPABASE_URL 或 SUPABASE_SERVICE_ROLE_KEY，无法重置 Supabase 数据');
-  }
-
-  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-    db: {
-      schema: process.env.SUPABASE_SCHEMA || 'public',
+async function resetPostgresData() {
+  const drizzleClient = createDrizzleClient({
+    env: {
+      ...process.env,
+      SIGNAL_DB_DRIVER: 'postgres',
     },
   });
-}
 
-async function deleteRowsInBatches({ supabase, table, keyColumn, selectColumns = keyColumn, batchSize = 1000 }) {
-  let deletedCount = 0;
+  try {
+    await drizzleClient.client.unsafe(`
+      TRUNCATE TABLE
+        radar_runtime_state,
+        radar_trade_intents,
+        radar_positions,
+        radar_alerts,
+        radar_tokens_seen,
+        radar_narratives,
+        radar_meta
+      RESTART IDENTITY
+      CASCADE
+    `);
 
-  while (true) {
-    const { data, error } = await supabase
-      .from(table)
-      .select(selectColumns)
-      .order(keyColumn, { ascending: true })
-      .limit(batchSize);
-
-    if (error) {
-      throw new Error(`读取 ${table} 失败: ${error.message}`);
-    }
-
-    const rows = data || [];
-    if (!rows.length) {
-      break;
-    }
-
-    const keys = rows.map((row) => row[keyColumn]).filter(Boolean);
-    if (!keys.length) {
-      break;
-    }
-
-    const { data: deletedRows, error: deleteError } = await supabase
-      .from(table)
-      .delete()
-      .in(keyColumn, keys)
-      .select(keyColumn);
-
-    if (deleteError) {
-      throw new Error(`删除 ${table} 失败: ${deleteError.message}`);
-    }
-
-    deletedCount += deletedRows?.length || 0;
-
-    if (rows.length < batchSize) {
-      break;
-    }
+    return {
+      driver: 'postgres',
+      truncatedTables: [
+        'radar_runtime_state',
+        'radar_trade_intents',
+        'radar_positions',
+        'radar_alerts',
+        'radar_tokens_seen',
+        'radar_narratives',
+        'radar_meta',
+      ],
+    };
+  } finally {
+    await drizzleClient.client.end({ timeout: 5 });
   }
-
-  return deletedCount;
-}
-
-async function resetSupabaseData() {
-  const supabase = createSupabase();
-
-  const deletedAlerts = await deleteRowsInBatches({
-    supabase,
-    table: 'radar_alerts',
-    keyColumn: 'id',
-  });
-  const deletedPositions = await deleteRowsInBatches({
-    supabase,
-    table: 'radar_positions',
-    keyColumn: 'id',
-  });
-  const deletedRuntimeState = await deleteRowsInBatches({
-    supabase,
-    table: 'radar_runtime_state',
-    keyColumn: 'state_key',
-  });
-  const deletedMeta = await deleteRowsInBatches({
-    supabase,
-    table: 'radar_meta',
-    keyColumn: 'key',
-  });
-
-  return {
-    driver: 'supabase',
-    deletedAlerts,
-    deletedPositions,
-    deletedRuntimeState,
-    deletedMeta,
-  };
 }
 
 async function main() {
   const driver = resolveDriver();
   const summary = [];
 
-  if (driver === 'sqlite' || driver === 'both') {
+  const currentDriver = resolveSignalDbDriver();
+  const effectiveDriver = driver === 'both' ? currentDriver : driver;
+
+  if (effectiveDriver === 'sqlite' || driver === 'both') {
     summary.push(resetSqliteData());
   }
 
-  if (driver === 'supabase' || driver === 'both') {
-    summary.push(await resetSupabaseData());
+  if (effectiveDriver === 'postgres' || driver === 'both') {
+    summary.push(await resetPostgresData());
   }
 
   console.log('[reset] 已完成测试数据重置');

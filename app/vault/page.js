@@ -1,12 +1,15 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { APP_CONFIG } from '../../src/config/app-config.js';
+import { useSignalSnapshot } from '../../src/modules/signals/client/use-signal-snapshot.js';
+import { useSignalStream } from '../../src/modules/signals/client/use-signal-stream.js';
 import AppFooter from '../components/AppFooter';
 import AppHeader from '../components/AppHeader';
 import { PortfolioSection } from '../components/PortfolioCards';
 import { formatDuration, formatTime, formatUsd, formatUsdValue } from '../components/formatters';
 
-const POLL_SECONDS = 30;
+const POLL_SECONDS = APP_CONFIG.signals.pollSeconds;
 
 function buildPaperTradeSettings(config = {}) {
   const fallbackTakeProfitSteps = Array.isArray(config?.paperTakeProfitSteps)
@@ -32,53 +35,34 @@ function buildPaperTradeSettings(config = {}) {
   };
 }
 
-async function loadSnapshot() {
-  const response = await fetch('/api/signals/snapshot?limit=200', { cache: 'no-store' });
-  if (!response.ok) {
-    throw new Error('读取持仓数据失败');
-  }
-  return response.json();
-}
-
 export default function VaultPage() {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [copiedKey, setCopiedKey] = useState('');
-  const [countdown, setCountdown] = useState(POLL_SECONDS);
-  const [streamConnected, setStreamConnected] = useState(false);
-  const [headerMeta, setHeaderMeta] = useState({
-    strategyRuntimeLabel: '',
-    strategyRuntimeSeconds: 0,
-    strategyStartedAt: '',
-  });
   const lastScrollYRef = useRef(0);
-  const streamConnectedRef = useRef(false);
-
-  useEffect(() => {
-    streamConnectedRef.current = streamConnected;
-  }, [streamConnected]);
-
-  function applySnapshot(json) {
-    setData(json);
-    setHeaderMeta((current) => ({
-      strategyRuntimeLabel: json.strategyRuntimeLabel || current.strategyRuntimeLabel,
-      strategyRuntimeSeconds: json.strategyRuntimeSeconds ?? current.strategyRuntimeSeconds,
-      strategyStartedAt: json.strategyStartedAt || current.strategyStartedAt,
-    }));
-    setError('');
-    setLoading(false);
-    preserveScrollAfterUpdate();
-  }
-
-  function preserveScrollAfterUpdate() {
+  const preserveScrollAfterUpdate = useCallback(() => {
     const nextScrollY = lastScrollYRef.current;
     window.requestAnimationFrame(() => {
       if (Math.abs(window.scrollY - nextScrollY) > 4) {
         window.scrollTo({ top: nextScrollY, behavior: 'auto' });
       }
     });
-  }
+  }, []);
+  const {
+    data,
+    loading,
+    error,
+    countdown,
+    headerMeta,
+    applySnapshot,
+  } = useSignalSnapshot({
+    limit: APP_CONFIG.signals.snapshotLimit,
+    pollSeconds: POLL_SECONDS,
+    errorMessage: '读取持仓数据失败',
+    onSnapshot: preserveScrollAfterUpdate,
+  });
+  const { connected: streamConnected } = useSignalStream({
+    limit: APP_CONFIG.signals.snapshotLimit,
+    onSnapshot: applySnapshot,
+  });
 
   useEffect(() => {
     if ('scrollRestoration' in window.history) {
@@ -103,77 +87,6 @@ export default function VaultPage() {
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function fetchData() {
-      try {
-        if (streamConnectedRef.current) {
-          return;
-        }
-
-        const json = await loadSnapshot();
-        if (!cancelled) {
-          applySnapshot(json);
-          setCountdown(POLL_SECONDS);
-        }
-      } catch (requestError) {
-        if (!cancelled) {
-          setError(requestError instanceof Error ? requestError.message : '读取持仓数据失败');
-          setLoading(false);
-        }
-      }
-    }
-
-    fetchData();
-
-    const pollTimer = window.setInterval(fetchData, POLL_SECONDS * 1000);
-    const countdownTimer = window.setInterval(() => {
-      setCountdown((current) => (current <= 1 ? POLL_SECONDS : current - 1));
-    }, 1000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(pollTimer);
-      clearInterval(countdownTimer);
-    };
-  }, []);
-
-  useEffect(() => {
-    let disposed = false;
-    const source = new EventSource('/api/signals/stream?limit=200');
-
-    source.addEventListener('snapshot', (event) => {
-      if (disposed) {
-        return;
-      }
-
-      try {
-        const json = JSON.parse(event.data);
-        applySnapshot(json);
-        setStreamConnected(true);
-      } catch {
-        setStreamConnected(false);
-      }
-    });
-
-    source.addEventListener('stream-error', () => {
-      if (!disposed) {
-        setStreamConnected(false);
-      }
-    });
-
-    source.onerror = () => {
-      if (!disposed) {
-        setStreamConnected(false);
-      }
-    };
-
-    return () => {
-      disposed = true;
-      source.close();
-    };
-  }, []);
 
   async function handleCopy(value, key) {
     try {

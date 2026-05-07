@@ -1,193 +1,30 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { APP_CONFIG } from '../src/config/app-config.js';
+import { useSignalSnapshot } from '../src/modules/signals/client/use-signal-snapshot.js';
+import { useSignalStream } from '../src/modules/signals/client/use-signal-stream.js';
+import {
+  formatCompactTime,
+  formatDuration,
+  formatLiquidity,
+  formatPercent,
+  formatPrice,
+  formatTime,
+  formatUsd,
+  formatUsdValue,
+} from '../src/modules/signals/lib/signal-formatters.js';
 import AppFooter from './components/AppFooter';
 import AppHeader from './components/AppHeader';
 import LoadingBlock from './components/LoadingBlock';
-import TokenSignalTimeline, { ScoreWithTooltip } from './components/TokenSignalTimeline';
+import { TradeDecisionIcon, TradeReasonIcon } from './components/TradeConditionsTooltip';
+import TokenSignalTimeline from './components/TokenSignalTimeline';
 import VirtualListTable from './components/VirtualListTable';
 import { AddressCopy, ExternalLinks, TokenAvatar } from './components/token-ui';
 
-const POLL_SECONDS = 30;
-const ALERT_ROW_HEIGHT = 214;
-const ALERT_LIST_HEIGHT = 600;
-
-function formatMoney(value) {
-  if (value == null) {
-    return '--';
-  }
-
-  return new Intl.NumberFormat('en-US', {
-    notation: value >= 100000 ? 'compact' : 'standard',
-    maximumFractionDigits: value >= 1000 ? 1 : 2,
-  }).format(value);
-}
-
-function formatPercent(value) {
-  if (value == null) {
-    return '--';
-  }
-
-  const number = Number(value);
-  return `${number >= 0 ? '+' : ''}${number.toFixed(2)}%`;
-}
-
-function formatPrice(value) {
-  if (value == null || Number.isNaN(Number(value))) {
-    return '--';
-  }
-
-  const number = Number(value);
-  const abs = Math.abs(number);
-  if (abs >= 1) {
-    return `$${number.toFixed(4)}`;
-  }
-  if (abs >= 0.01) {
-    return `$${number.toFixed(6)}`;
-  }
-  return `$${number.toFixed(8)}`;
-}
-
-function formatLiquidity(value) {
-  if (value == null || Number.isNaN(Number(value))) {
-    return '--';
-  }
-
-  const number = Number(value);
-  if (number >= 1000000) {
-    return `$${(number / 1000000).toFixed(2)}M`;
-  }
-  if (number >= 1000) {
-    return `$${(number / 1000).toFixed(1)}k`;
-  }
-  return `$${number.toFixed(0)}`;
-}
-
-function formatUsd(value) {
-  if (value == null || Number.isNaN(Number(value))) {
-    return '--';
-  }
-
-  const number = Number(value);
-  return `${number >= 0 ? '+' : '-'}$${Math.abs(number).toFixed(2)}`;
-}
-
-function formatUsdValue(value) {
-  if (value == null || Number.isNaN(Number(value))) {
-    return '--';
-  }
-
-  return `$${Math.abs(Number(value)).toFixed(2)}`;
-}
-
-function formatTime(value) {
-  if (!value) {
-    return '--';
-  }
-
-  return new Date(value).toLocaleString('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    hour12: false,
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-}
-
-function formatCompactTime(value) {
-  if (!value) {
-    return '--';
-  }
-
-  return new Date(value).toLocaleString('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    hour12: false,
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function formatDuration(seconds) {
-  if (!seconds || seconds <= 0) {
-    return '刚启动';
-  }
-
-  const total = Math.floor(seconds);
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const secs = total % 60;
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m ${secs}s`;
-  }
-  if (minutes > 0) {
-    return `${minutes}m ${secs}s`;
-  }
-  return `${secs}s`;
-}
-
-function formatDecisionLabel(value) {
-  switch (value) {
-    case 'approved':
-      return '允许开仓';
-    case 'skipped':
-      return '跳过';
-    case 'rejected':
-      return '不交易';
-    default:
-      return '--';
-  }
-}
-
-function formatTradeActionLabel(alert) {
-  const reason = String(alert?.tradeDecisionReason || '');
-  if (reason.includes('不再分批加仓') || reason.includes('头仓已一次性买满')) {
-    return '持仓观察';
-  }
-  if (reason.includes('第2次信号评分走强')) {
-    return '补开头仓';
-  }
-  if (reason.includes('头仓条件')) {
-    return '头仓';
-  }
-  if (reason.includes('头仓仅允许第 1-2 次')) {
-    return '错过头仓窗口';
-  }
-  return alert?.tradeDecisionStatus === 'approved' ? '可执行' : '观察中';
-}
-
-function formatTradeReasonHint(alert) {
-  const reason = String(alert?.tradeDecisionReason || '');
-  if (!reason) {
-    return '';
-  }
-  if (reason.includes('高热模式')) {
-    return '高热限制';
-  }
-  if (reason.includes('买卖比')) {
-    return '买卖比不足';
-  }
-  if (reason.includes('流动性')) {
-    return '流动性不足';
-  }
-  if (reason.includes('成交量')) {
-    return '成交量不足';
-  }
-  if (reason.includes('评分')) {
-    return '评分不足';
-  }
-  if (reason.includes('头仓仅允许')) {
-    return '错过头仓';
-  }
-  if (reason.includes('不再分批加仓') || reason.includes('头仓已一次性买满')) {
-    return '已满目标仓';
-  }
-  return '';
-}
+const POLL_SECONDS = APP_CONFIG.signals.pollSeconds;
+const ALERT_ROW_HEIGHT = APP_CONFIG.ui.alertRowHeight;
+const ALERT_LIST_HEIGHT = APP_CONFIG.ui.alertListHeight;
 
 function formatEntryProgress(positionSizeUsd, targetPositionSizeUsd, entryStage) {
   const current = Number(positionSizeUsd || 0);
@@ -201,226 +38,17 @@ function formatEntryProgress(positionSizeUsd, targetPositionSizeUsd, entryStage)
   return `建仓 ${Math.min(stage || 0, 1)}/1 · ${progress.toFixed(0)}%`;
 }
 
-function formatTakeProfitSteps(steps = []) {
-  return (steps || [])
-    .map((step) => `+${step.targetPercent}%/${step.sellPercent}%`)
-    .join(' · ');
-}
-
-function getTelegramTradeScore(alert) {
-  const signalCount = Number(alert?.occurrenceCount || alert?.signalCount || 1);
-  const smartMoney = Number(alert?.smartMoney || 0);
-  const pctGain = Number(alert?.pctGain || 0);
-  const liquidity = Number(alert?.liq || 0);
-  const volume = Number(alert?.volume || 0);
-  const buySellRatio = Number(alert?.buySellRatio || 0);
-  const ageHours = Number(alert?.ageHours || 0);
-  const oneHourChange = Number(alert?.change1h || 0);
-
-  let score = 0;
-
-  if (smartMoney >= 15) {
-    score += 30;
-  } else if (smartMoney >= 8) {
-    score += 22;
-  } else if (smartMoney >= 5) {
-    score += 14;
-  } else if (smartMoney >= 3) {
-    score += 8;
-  } else if (smartMoney >= 2) {
-    score += 4;
-  }
-
-  if (signalCount <= 1) {
-    score += 10;
-  } else if (signalCount === 2) {
-    score += 6;
-  } else if (signalCount === 3) {
-    score += 2;
-  } else {
-    score -= 6;
-  }
-
-  if (pctGain >= 15) {
-    score += 15;
-  } else if (pctGain >= 10) {
-    score += 12;
-  } else if (pctGain >= 8) {
-    score += 8;
-  } else if (pctGain >= 5) {
-    score += 5;
-  }
-
-  if (liquidity >= 100000) {
-    score += 16;
-  } else if (liquidity >= 50000) {
-    score += 12;
-  } else if (liquidity >= 20000) {
-    score += 10;
-  } else if (liquidity >= 10000) {
-    score += 6;
-  } else if (liquidity >= 5000) {
-    score += 2;
-  }
-
-  if (volume >= 500000) {
-    score += 16;
-  } else if (volume >= 200000) {
-    score += 12;
-  } else if (volume >= 100000) {
-    score += 10;
-  } else if (volume >= 50000) {
-    score += 7;
-  } else if (volume >= 30000) {
-    score += 4;
-  }
-
-  if (buySellRatio >= 2) {
-    score += 12;
-  } else if (buySellRatio >= 1.8) {
-    score += 9;
-  } else if (buySellRatio >= 1.6) {
-    score += 6;
-  } else if (buySellRatio >= 1.4) {
-    score += 3;
-  } else if (buySellRatio < 1.2) {
-    score -= 6;
-  } else if (buySellRatio < 1.4) {
-    score -= 2;
-  }
-
-  if (ageHours <= 6) {
-    score += 5;
-  } else if (ageHours <= 12) {
-    score += 4;
-  } else if (ageHours <= 24) {
-    score += 3;
-  } else if (ageHours <= 48) {
-    score += 1;
-  }
-
-  if (oneHourChange >= 80) {
-    score -= 18;
-  } else if (oneHourChange >= 50) {
-    score -= 10;
-  } else if (oneHourChange >= 30) {
-    score -= 4;
-  }
-
-  const finalScore = Math.max(0, Math.round(score));
-  let label = '观察';
-  if (finalScore >= 80) {
-    label = '强势';
-  } else if (finalScore >= 65) {
-    label = '偏强';
-  } else if (finalScore >= 50) {
-    label = '中性';
-  }
-
-  return { score: finalScore, label };
-}
-
-function getPriceActionScore(alert) {
-  const rounds = Number(alert?.occurrenceCount || alert?.signalCount || 1);
-  const pctGain = Number(alert?.pctGain || 0);
-  const smartMoney = Number(alert?.smartMoney || 0);
-  const volume = Number(alert?.volume || 0);
-  const liquidity = Number(alert?.liq || 0);
-  const oneHourChange = Number(alert?.change1h || 0);
-  const buySellRatio = Number(alert?.buySellRatio || 0);
-  const volUp = Boolean(alert?.volUp || alert?.volumeUp || alert?.volumeRising);
-
-  let score = 0;
-
-  if (rounds >= 3) {
-    score += 20;
-  } else if (rounds >= 2) {
-    score += 10;
-  }
-
-  if (pctGain >= 30) {
-    score += 25;
-  } else if (pctGain >= 15) {
-    score += 18;
-  } else if (pctGain >= 8) {
-    score += 12;
-  } else if (pctGain >= 5) {
-    score += 8;
-  }
-
-  if (volUp) {
-    score += 10;
-  }
-
-  if (smartMoney >= 5) {
-    score += 15;
-  } else if (smartMoney >= 3) {
-    score += 10;
-  } else if (smartMoney >= 2) {
-    score += 6;
-  }
-
-  if (buySellRatio >= 1.5) {
-    score += 12;
-  } else if (buySellRatio >= 1.2) {
-    score += 8;
-  } else if (buySellRatio >= 1.1) {
-    score += 5;
-  }
-
-  if (volume >= 100000) {
-    score += 10;
-  } else if (volume >= 30000) {
-    score += 6;
-  }
-
-  if (liquidity >= 20000) {
-    score += 8;
-  } else if (liquidity >= 10000) {
-    score += 5;
-  }
-
-  if (oneHourChange >= 80) {
-    score -= 15;
-  } else if (oneHourChange >= 50) {
-    score -= 8;
-  }
-
-  const finalScore = Math.max(0, Math.min(100, Math.round(score)));
-  let label = '观察';
-  if (finalScore >= 80) label = '强势';
-  else if (finalScore >= 65) label = '偏强';
-  else if (finalScore >= 50) label = '中性';
-
-  return { score: finalScore, label };
-}
-
-function getTradeEvalIcons(alert) {
-  const items = [];
-  const reasonHint = formatTradeReasonHint(alert);
-  if (reasonHint) {
-    items.push({ icon: '!', label: '原因', text: reasonHint });
-  }
-  items.push({
-    icon: 'TP',
-    label: '止盈',
-    text: `TP ${formatTakeProfitSteps(alert.paperTakeProfitSteps || [{ targetPercent: 40, sellPercent: 50 }])}`,
-  });
-  items.push({
-    icon: 'SL',
-    label: '止损',
-    text: `SL -${alert.paperStopLossPct ?? 50}%`,
-  });
-  return items;
-}
-
-function getTradeScoreValue(alert) {
-  const value = Number(alert?.tradeScore);
-  return Number.isFinite(value) ? value : '--';
-}
-
-function AlertRow({ alert, copiedKey, onCopy, streamConnected }) {
+function AlertRow({
+  alert,
+  copiedKey,
+  onCopy,
+  streamConnected,
+  rowIndex = 0,
+  snapshotConfig,
+}) {
   const copyId = `alert-${alert.address}-${alert.latestPushedAt || alert.pushedAt}`;
+  const tradeScore = alert.tradeScore ?? '--';
+  const priceScore = alert.priceScore ?? '--';
 
   return (
     <>
@@ -466,14 +94,28 @@ function AlertRow({ alert, copiedKey, onCopy, streamConnected }) {
       </div>
       <div className="virtual-cell momentum-cell compact-metric-cell">
         <div className="metric-stack compact-metric-stack">
-          <strong className={alert.pctGain >= 0 ? 'positive' : 'negative'}>{formatPercent(alert.pctGain)}</strong>
+          <div className="momentum-icon-row">
+            <TradeReasonIcon signal={alert} preferBelow={rowIndex < 2} />
+          </div>
+          <strong className={alert.pctGain >= 0 ? 'positive' : 'negative'}>
+            {formatPercent(alert.pctGain)}
+          </strong>
           <span className="metric-inline">1h {formatPercent(alert.change1h || 0)}</span>
         </div>
       </div>
       <div className="virtual-cell trade-cell compact-trade-cell">
-        <div className="trade-score-compact">
-          <span className="score-inline-pill trade-score-line">交易评分：{getTelegramTradeScore(alert).score}</span>
-          <span className="score-inline-pill muted trade-score-line">价格评分：{getPriceActionScore(alert).score}</span>
+        <div className="trade-score-head">
+          <div className="trade-icon-row">
+            <TradeDecisionIcon
+              signal={alert}
+              snapshotConfig={snapshotConfig}
+              preferBelow={rowIndex < 2}
+            />
+          </div>
+          <div className="trade-score-compact">
+            <span className="score-inline-pill trade-score-line">交易评分：{tradeScore}</span>
+            <span className="score-inline-pill muted trade-score-line">价格评分：{priceScore}</span>
+          </div>
         </div>
         <div className="trade-tags compact-tags">
           {alert.paperTargetPositionSizeUsd != null ? (
@@ -514,7 +156,7 @@ function AlertRow({ alert, copiedKey, onCopy, streamConnected }) {
   );
 }
 
-function VirtualAlertList({ alerts, copiedKey, onCopy, streamConnected }) {
+function VirtualAlertList({ alerts, copiedKey, onCopy, streamConnected, snapshotConfig }) {
   return (
     <VirtualListTable
       items={alerts}
@@ -531,12 +173,14 @@ function VirtualAlertList({ alerts, copiedKey, onCopy, streamConnected }) {
       rowClassName="alert-grid"
       minTableWidth={980}
       getItemKey={(alert) => `${alert.address}-${alert.signalCount}-${alert.latestPushedAt || alert.pushedAt}`}
-      renderRow={(alert) => (
+      renderRow={(alert, rowIndex) => (
         <AlertRow
           alert={alert}
           copiedKey={copiedKey}
           onCopy={onCopy}
           streamConnected={streamConnected}
+          rowIndex={rowIndex}
+          snapshotConfig={snapshotConfig}
         />
       )}
     />
@@ -553,107 +197,25 @@ function SortButton({ label, active, direction, onClick }) {
 }
 
 export default function Page() {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [countdown, setCountdown] = useState(POLL_SECONDS);
   const [copiedKey, setCopiedKey] = useState('');
-  const [streamConnected, setStreamConnected] = useState(false);
   const [sortKey, setSortKey] = useState('latestPushedAt');
   const [sortDirection, setSortDirection] = useState('desc');
-  const [headerMeta, setHeaderMeta] = useState({
-    strategyRuntimeLabel: '',
-    strategyRuntimeSeconds: 0,
-    strategyStartedAt: '',
+  const {
+    data,
+    error,
+    loading,
+    countdown,
+    headerMeta,
+    applySnapshot,
+  } = useSignalSnapshot({
+    limit: APP_CONFIG.signals.snapshotLimit,
+    pollSeconds: POLL_SECONDS,
+    errorMessage: '加载失败',
   });
-
-  useEffect(() => {
-    let disposed = false;
-
-    async function load() {
-      try {
-        setError('');
-        const response = await fetch('/api/signals/snapshot?limit=200', {
-          cache: 'no-store',
-        });
-        const json = await response.json();
-
-        if (!response.ok) {
-          throw new Error(json.error || '加载失败');
-        }
-
-        if (!disposed) {
-          setData(json);
-          setHeaderMeta((current) => ({
-            strategyRuntimeLabel: json.strategyRuntimeLabel || current.strategyRuntimeLabel,
-            strategyRuntimeSeconds: json.strategyRuntimeSeconds ?? current.strategyRuntimeSeconds,
-            strategyStartedAt: json.strategyStartedAt || current.strategyStartedAt,
-          }));
-          setLoading(false);
-          setCountdown(POLL_SECONDS);
-        }
-      } catch (err) {
-        if (!disposed) {
-          setError(err instanceof Error ? err.message : '加载失败');
-          setLoading(false);
-        }
-      }
-    }
-
-    load();
-    const pollTimer = setInterval(load, POLL_SECONDS * 1000);
-    const countdownTimer = setInterval(() => {
-      setCountdown((value) => (value <= 1 ? POLL_SECONDS : value - 1));
-    }, 1000);
-
-    return () => {
-      disposed = true;
-      clearInterval(pollTimer);
-      clearInterval(countdownTimer);
-    };
-  }, []);
-
-  useEffect(() => {
-    let disposed = false;
-    const source = new EventSource('/api/signals/stream?limit=200');
-
-    source.addEventListener('snapshot', (event) => {
-      if (disposed) {
-        return;
-      }
-
-      try {
-        const json = JSON.parse(event.data);
-        setData(json);
-        setHeaderMeta((current) => ({
-          strategyRuntimeLabel: json.strategyRuntimeLabel || current.strategyRuntimeLabel,
-          strategyRuntimeSeconds: json.strategyRuntimeSeconds ?? current.strategyRuntimeSeconds,
-          strategyStartedAt: json.strategyStartedAt || current.strategyStartedAt,
-        }));
-        setStreamConnected(true);
-        setLoading(false);
-      } catch {
-        setStreamConnected(false);
-      }
-    });
-
-    source.addEventListener('stream-error', () => {
-      if (!disposed) {
-        setStreamConnected(false);
-      }
-    });
-
-    source.onerror = () => {
-      if (!disposed) {
-        setStreamConnected(false);
-      }
-    };
-
-    return () => {
-      disposed = true;
-      source.close();
-    };
-  }, []);
+  const { connected: streamConnected } = useSignalStream({
+    limit: APP_CONFIG.signals.snapshotLimit,
+    onSnapshot: applySnapshot,
+  });
 
   const alerts = data?.alerts || [];
   const sortedAlerts = useMemo(() => {
@@ -850,6 +412,7 @@ export default function Page() {
             copiedKey={copiedKey}
             onCopy={handleCopy}
             streamConnected={streamConnected}
+            snapshotConfig={data?.config}
           />
         ) : null}
       </section>

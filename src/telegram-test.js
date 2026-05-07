@@ -1,25 +1,19 @@
 import os from 'node:os';
 import path from 'node:path';
 import dotenv from 'dotenv';
+import { createOutboundHttpClient } from './lib/outbound-http.js';
 
 dotenv.config({ path: path.join(os.homedir(), '.env'), override: false });
 dotenv.config({ override: false });
 
 const token = process.env.TELEGRAM_BOT_TOKEN || '';
 const chatId = process.env.TG_CHAT_ID || process.env.TELEGRAM_CHAT_ID || '';
-
-async function fetchJson(url, options = {}, timeoutMs = 10000) {
-  const response = await fetch(url, {
-    ...options,
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
-
-  return response.json();
-}
+const { fetchJson } = createOutboundHttpClient({
+  defaultTimeoutMs: Math.max(
+    5_000,
+    Number(process.env.SIGNAL_TG_TIMEOUT_MS || process.env.RADAR_TG_TIMEOUT_MS || 20_000)
+  ),
+});
 
 function maskChatId(value) {
   const text = String(value);

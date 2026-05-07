@@ -1,15 +1,12 @@
-import { getRealtimeSignalSnapshot } from '../../../../src/signal-scanner.js';
+import { APP_CONFIG, normalizeSignalLimit } from '../../../../src/config/app-config.js';
+import { readRealtimeSignalSnapshot } from '../../../../src/modules/signals/server/signal-query-service.js';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const STREAM_INTERVAL_MS = 5_000;
-const HEARTBEAT_INTERVAL_MS = 15_000;
-
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
-  const rowLimit = Number(searchParams.get('limit') || 60);
-  const safeLimit = Number.isFinite(rowLimit) ? Math.min(Math.max(rowLimit, 10), 120) : 60;
+  const safeLimit = normalizeSignalLimit(searchParams.get('limit'));
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -58,7 +55,7 @@ export async function GET(request) {
 
         pushing = true;
         try {
-          const snapshot = await getRealtimeSignalSnapshot(safeLimit);
+          const snapshot = await readRealtimeSignalSnapshot(safeLimit);
           safeEnqueue(encoder.encode(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`));
         } catch (error) {
           safeEnqueue(
@@ -76,10 +73,10 @@ export async function GET(request) {
       void pushSnapshot();
       streamTimer = setInterval(() => {
         void pushSnapshot();
-      }, STREAM_INTERVAL_MS);
+      }, APP_CONFIG.signals.streamIntervalMs);
       heartbeatTimer = setInterval(() => {
         safeEnqueue(encoder.encode(': heartbeat\n\n'));
-      }, HEARTBEAT_INTERVAL_MS);
+      }, APP_CONFIG.signals.heartbeatIntervalMs);
 
       request.signal.addEventListener('abort', cleanup);
     },

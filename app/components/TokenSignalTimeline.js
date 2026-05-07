@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useMemo } from 'react';
 import * as echarts from 'echarts';
+import { TradeConditionsTooltipTrigger } from './TradeConditionsTooltip';
 
 const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false });
 
@@ -35,7 +36,7 @@ function formatAxisTime(value) {
   });
 }
 
-function formatTradeScore(value) {
+function formatScore(value) {
   if (value == null || Number.isNaN(Number(value))) {
     return '--';
   }
@@ -43,14 +44,17 @@ function formatTradeScore(value) {
   return `${Math.round(Number(value))}/100`;
 }
 
-export function ScoreWithTooltip({ score, signal }) {
-  const scoreLabel = formatTradeScore(score);
-  const reason = signal?.tradeDecisionReason || '暂无交易判断说明';
+export function ScoreWithTooltip({ score, signal, snapshotConfig, preferBelow = false }) {
+  const scoreLabel = formatScore(score);
 
   return (
-    <span className="position-score-chip" title={reason}>
-      评分 {scoreLabel}
-    </span>
+    <TradeConditionsTooltipTrigger
+      signal={signal}
+      snapshotConfig={snapshotConfig}
+      preferBelow={preferBelow}
+    >
+      <span className="position-score-chip">评分 {scoreLabel}</span>
+    </TradeConditionsTooltipTrigger>
   );
 }
 
@@ -75,7 +79,7 @@ export default function TokenSignalTimeline({ history = [], compact = false }) {
     }
 
     const scoreValues = points
-      .map((item) => Number(item.tradeScore))
+      .flatMap((item) => [Number(item.tradeScore), Number(item.priceScore)])
       .filter((value) => Number.isFinite(value));
     const minScore = scoreValues.length ? Math.min(...scoreValues) : 0;
     const maxScore = scoreValues.length ? Math.max(...scoreValues) : 100;
@@ -90,7 +94,7 @@ export default function TokenSignalTimeline({ history = [], compact = false }) {
       grid: {
         left: compact ? 8 : 12,
         right: compact ? 8 : 12,
-        top: compact ? 8 : 12,
+        top: compact ? 10 : 12,
         bottom: compact ? 26 : 30,
         containLabel: true,
       },
@@ -106,10 +110,13 @@ export default function TokenSignalTimeline({ history = [], compact = false }) {
           fontSize: 12,
         },
         formatter(params) {
-          const item = params?.[0]?.data;
+          const item = params?.find((param) => param?.data)?.data;
           if (!item) {
             return '';
           }
+
+          const tradeParam = params?.find((param) => param?.seriesName === '交易评分');
+          const priceParam = params?.find((param) => param?.seriesName === '价格评分');
 
           const priceLabel =
             item.price == null || Number.isNaN(Number(item.price))
@@ -120,7 +127,8 @@ export default function TokenSignalTimeline({ history = [], compact = false }) {
             `${item.fullLabel}`,
             `第 ${item.signalCount} 次触发`,
             `价格 ${priceLabel}`,
-            `评分 ${formatTradeScore(item.tradeScore)}`,
+            `${tradeParam?.marker || ''}交易评分 ${formatScore(item.tradeScore)}`,
+            `${priceParam?.marker || ''}价格评分 ${formatScore(item.priceScore)}`,
           ].join('<br/>');
         },
       },
@@ -161,13 +169,15 @@ export default function TokenSignalTimeline({ history = [], compact = false }) {
       },
       series: [
         {
+          name: '交易评分',
           type: 'line',
           smooth: true,
           symbol: 'circle',
-          symbolSize: compact ? 6 : 7,
+          symbolSize: compact ? 7 : 8,
           showSymbol: true,
+          connectNulls: false,
           lineStyle: {
-            width: 2.2,
+            width: 2.6,
             color: '#8df847',
           },
           itemStyle: {
@@ -184,24 +194,99 @@ export default function TokenSignalTimeline({ history = [], compact = false }) {
           emphasis: {
             focus: 'series',
           },
-          label: compact
-            ? { show: false }
+          markLine: compact
+            ? undefined
             : {
-                show: true,
-                position: 'top',
-                distance: 8,
-                color: 'rgba(242, 245, 247, 0.92)',
-                fontSize: 10,
-                formatter(params) {
-                  const score = params?.data?.tradeScore;
-                  if (score == null || Number.isNaN(Number(score))) {
-                    return '';
-                  }
-                  return `${Math.round(Number(score))}`;
+                symbol: 'none',
+                label: { show: false },
+                lineStyle: {
+                  color: 'rgba(141, 248, 71, 0.18)',
+                  type: 'solid',
+                  width: 1,
                 },
+                data: [{ yAxis: 65 }],
               },
+          markArea: {
+            silent: true,
+            itemStyle: {
+              borderWidth: 0,
+            },
+            data: [
+              [
+                {
+                  yAxis: 0,
+                  itemStyle: { color: 'rgba(255, 99, 132, 0.055)' },
+                },
+                { yAxis: 50 },
+              ],
+              [
+                {
+                  yAxis: 50,
+                  itemStyle: { color: 'rgba(255, 184, 77, 0.045)' },
+                },
+                { yAxis: 65 },
+              ],
+              [
+                {
+                  yAxis: 65,
+                  itemStyle: { color: 'rgba(94, 234, 212, 0.04)' },
+                },
+                { yAxis: 80 },
+              ],
+              [
+                {
+                  yAxis: 80,
+                  itemStyle: { color: 'rgba(141, 248, 71, 0.045)' },
+                },
+                { yAxis: 100 },
+              ],
+            ],
+          },
+          label: { show: false },
           data: points.map((item) => ({
-            value: Number(item.tradeScore ?? 0),
+            value: item.tradeScore == null || Number.isNaN(Number(item.tradeScore)) ? null : Number(item.tradeScore),
+            ...item,
+          })),
+        },
+        {
+          name: '价格评分',
+          type: 'line',
+          smooth: true,
+          symbol: 'diamond',
+          symbolSize: compact ? 7 : 8,
+          showSymbol: true,
+          connectNulls: false,
+          lineStyle: {
+            width: 2,
+            color: '#5eead4',
+            type: 'dashed',
+          },
+          itemStyle: {
+            color: '#5eead4',
+            borderColor: '#ccfbf1',
+            borderWidth: 1.5,
+          },
+          areaStyle: {
+            color: 'rgba(94, 234, 212, 0.05)',
+          },
+          emphasis: {
+            focus: 'series',
+          },
+          markLine: compact
+            ? undefined
+            : {
+                symbol: 'none',
+                label: { show: false },
+                lineStyle: {
+                  color: 'rgba(94, 234, 212, 0.18)',
+                  type: 'dashed',
+                  width: 1,
+                },
+                data: [{ yAxis: 50 }],
+              },
+          label: { show: false },
+          data: points.map((item) => ({
+            value: item.priceScore == null || Number.isNaN(Number(item.priceScore)) ? null : Number(item.priceScore),
             ...item,
           })),
         },
@@ -220,7 +305,7 @@ export default function TokenSignalTimeline({ history = [], compact = false }) {
           notMerge
           lazyUpdate
           opts={{ renderer: 'svg' }}
-          style={{ width: '100%', height: compact ? 138 : 182 }}
+          style={{ width: '100%', height: compact ? 148 : 204 }}
           className="token-timeline-chart"
         />
       </div>
