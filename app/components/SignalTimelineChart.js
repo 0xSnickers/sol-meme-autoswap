@@ -93,7 +93,10 @@ export default function SignalTimelineChart({ timeline = [] }) {
           value: [item.time, item.cumulativeCount],
           raw: {
             ...item,
-            timeLabel: new Date(item.time).toLocaleString('zh-CN', { hour12: false }),
+            timeLabel: new Date(item.time).toLocaleString('zh-CN', {
+              timeZone: 'Asia/Shanghai',
+              hour12: false,
+            }),
           },
         })),
         lineStyle: {

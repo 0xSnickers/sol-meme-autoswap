@@ -4,12 +4,12 @@ import { useEffect, useMemo, useState } from 'react';
 import AppFooter from '../components/AppFooter';
 import AppHeader from '../components/AppHeader';
 import LoadingBlock from '../components/LoadingBlock';
-import TokenSignalTimeline from '../components/TokenSignalTimeline';
+import TokenSignalTimeline, { ScoreWithTooltip } from '../components/TokenSignalTimeline';
 import VirtualListTable from '../components/VirtualListTable';
-import { AddressCopy, ExternalLinks } from '../components/token-ui';
+import { AddressCopy, ExternalLinks, TokenAvatar } from '../components/token-ui';
 
 const REFRESH_SECONDS = 30;
-const SIGNAL_ROW_HEIGHT = 196;
+const SIGNAL_ROW_HEIGHT = 278;
 const SIGNAL_LIST_HEIGHT = 680;
 
 function formatMoney(value) {
@@ -53,12 +53,28 @@ function formatTime(value) {
   }
 
   return new Date(value).toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
     hour12: false,
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
+  });
+}
+
+function formatCompactTime(value) {
+  if (!value) {
+    return '--';
+  }
+
+  return new Date(value).toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    hour12: false,
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
   });
 }
 
@@ -73,6 +89,35 @@ function formatDecisionLabel(value) {
     default:
       return '--';
   }
+}
+
+function formatTradeActionLabel(alert) {
+  const reason = String(alert?.tradeDecisionReason || '');
+  if (reason.includes('第2次信号评分走强')) {
+    return '补开头仓';
+  }
+  if (reason.includes('不再分批加仓') || reason.includes('头仓已一次性买满')) {
+    return '持仓观察';
+  }
+  if (reason.includes('头仓条件')) {
+    return '头仓';
+  }
+  if (reason.includes('头仓仅允许第 1-2 次')) {
+    return '错过头仓窗口';
+  }
+  return alert?.tradeDecisionStatus === 'approved' ? '可执行' : '观察中';
+}
+
+function formatEntryProgress(positionSizeUsd, targetPositionSizeUsd, entryStage) {
+  const current = Number(positionSizeUsd || 0);
+  const target = Number(targetPositionSizeUsd || 0);
+  const stage = Number(entryStage || 0);
+  if (target <= 0) {
+    return '--';
+  }
+
+  const progress = Math.max(0, Math.min(100, (current / target) * 100));
+  return `建仓 ${Math.min(stage || 0, 1)}/1 · ${progress.toFixed(0)}%`;
 }
 
 function SortButton({ label, active, direction, onClick }) {
@@ -144,6 +189,7 @@ export default function SignalsPage() {
   }, []);
 
   const alerts = data?.alerts || [];
+  const latestSignal = data?.latestSignal || alerts[0] || null;
   const sortedAlerts = useMemo(() => {
     const rows = [...alerts];
     rows.sort((left, right) => {
@@ -246,6 +292,41 @@ export default function SignalsPage() {
         <div className="panel-header compact-header">
           <div>
             <h2>信号列表</h2>
+            <p className="panel-subtitle">列表展示的是已持久化的历史聚合信号，顶部卡片同步当前最新推送。</p>
+          </div>
+        </div>
+
+        <div className="latest-signal-banner">
+          <div>
+            <span className="latest-signal-kicker">最新 Telegram 推送</span>
+            <strong>
+              {latestSignal ? `${latestSignal.name} (${latestSignal.symbol})` : '暂无最新信号'}
+            </strong>
+            <p>
+              {latestSignal
+                ? `${latestSignal.address} · ${formatTime(latestSignal.pushedAt)} · ${formatPercent(latestSignal.pctGain || 0)} · 评分 ${latestSignal.tradeScore ?? '--'}`
+                : '等待下一次扫描结果'}
+            </p>
+          </div>
+          <div className="latest-signal-meta">
+            <span>{latestSignal?.smartMoney ?? '--'} 聪明钱</span>
+            <span>买卖比 {latestSignal?.buySellRatio ?? '--'}</span>
+            <span>流动性 {formatMoney(latestSignal?.liq || 0)}</span>
+          </div>
+        </div>
+
+        <div className="signal-highlight-bar">
+          <div className="signal-highlight-title">最新推送</div>
+          <div className="signal-highlight-body">
+            {latestSignal ? (
+              <>
+                <strong>{latestSignal.name} ({latestSignal.symbol})</strong>
+                <span>{latestSignal.address}</span>
+                <span>{formatCompactTime(latestSignal.pushedAt)}</span>
+              </>
+            ) : (
+              <span>当前暂无最新推送</span>
+            )}
           </div>
         </div>
 
@@ -335,7 +416,10 @@ export default function SignalsPage() {
               return (
                 <>
                   <div className="virtual-cell">
-                    <strong>{alert.name}</strong>
+                    <div className="token-title-row">
+                      <TokenAvatar name={alert.name} symbol={alert.symbol} imageUrl={alert.imageUrl} />
+                      <strong>{alert.name}</strong>
+                    </div>
                     <p>{alert.symbol}</p>
                     <AddressCopy
                       address={alert.address}
@@ -352,7 +436,10 @@ export default function SignalsPage() {
                     </div>
                   </div>
                   <div className="virtual-cell">
-                    <strong>{alert.occurrenceCount || alert.signalCount || 0} 次</strong>
+                    <div className="timeline-summary-row">
+                      <strong>{alert.occurrenceCount || alert.signalCount || 0} 次</strong>
+                      <span className="timeline-mini-time">{formatCompactTime(alert.latestPushedAt || alert.pushedAt)}</span>
+                    </div>
                     <p>现价 {formatPrice(alert.price)}</p>
                     <p>累计 {formatPercent(alert.pctGain || 0)}</p>
                   </div>
@@ -361,8 +448,8 @@ export default function SignalsPage() {
                     <p>持有人 {formatMoney(alert.holders || 0)}</p>
                   </div>
                   <div className="virtual-cell">
-                    <strong>{alert.tradeScore ?? '--'}</strong>
-                    <p className="clamp-2">{alert.tradeDecisionReason || '--'}</p>
+                    <ScoreWithTooltip score={alert.tradeScore ?? '--'} signal={alert} />
+                    <p>{formatTradeActionLabel(alert)}</p>
                   </div>
                   <div className="virtual-cell">
                     <strong>{formatDecisionLabel(alert.tradeDecisionStatus)}</strong>
@@ -372,6 +459,15 @@ export default function SignalsPage() {
                         : alert.paperPositionStatus === 'closed'
                           ? '已平仓'
                           : '未开仓'}
+                    </p>
+                    <p>
+                      {alert.paperTargetPositionSizeUsd != null
+                        ? formatEntryProgress(
+                            alert.paperPositionSizeUsd,
+                            alert.paperTargetPositionSizeUsd,
+                            alert.paperEntryStage
+                          )
+                        : '--'}
                     </p>
                   </div>
                   <div className="virtual-cell">

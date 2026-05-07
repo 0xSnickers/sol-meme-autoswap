@@ -1,7 +1,7 @@
 'use client';
 
 import LoadingBlock from './LoadingBlock';
-import { ExternalLinks, formatAddress } from './token-ui';
+import { ExternalLinks, formatAddress, TokenAvatar } from './token-ui';
 import {
   formatPercent,
   formatPrice,
@@ -55,22 +55,6 @@ function formatEntrySignalChip(position) {
   return `${signalText} / ${scoreText}`;
 }
 
-function formatPositionProgress(position) {
-  const totalTokenAmount = Number(position.tokenAmount || 0);
-  const remainingTokenAmount = Number(position.remainingTokenAmount ?? position.tokenAmount ?? 0);
-  if (totalTokenAmount <= 0) {
-    return null;
-  }
-
-  const remainingPercent = (remainingTokenAmount / totalTokenAmount) * 100;
-  const soldPercent = Math.max(0, 100 - remainingPercent);
-
-  return {
-    soldPercent,
-    remainingPercent: Math.max(0, remainingPercent),
-    soldTokenAmount: Math.max(0, totalTokenAmount - remainingTokenAmount),
-  };
-}
 
 export function SummaryMetric({ label, value, tone = 'neutral' }) {
   return (
@@ -97,9 +81,6 @@ export function PaperPositionCard({
   const valueAmount = position.currentValueUsd;
   const valuePrice = position.closePrice || position.currentPrice;
   const remainingCostUsd = Number(position.remainingPositionSizeUsd ?? position.positionSizeUsd ?? 0);
-  const progress = !isClosed ? formatPositionProgress(position) : null;
-  const remainingPercent = Number(progress?.remainingPercent ?? 0);
-  const reducedPercent = Number(progress?.soldPercent ?? 0);
   const showFloatingPnl = isClosed || floatingPnlReady;
   const pnlValue = showFloatingPnl ? formatUsd(position.pnlUsd) : '--';
   const pnlPercent = showFloatingPnl ? formatPercent(position.pnlPct) : '--';
@@ -111,6 +92,7 @@ export function PaperPositionCard({
       <div className="position-card-top">
         <div className="token-main">
           <div className="position-token-topline">
+            <TokenAvatar name={position.name} symbol={position.symbol} imageUrl={position.imageUrl} />
             <strong>{position.name}</strong>
             {!isClosed ? (
               <span className={`live-badge compact-live token-live-badge ${streamConnected ? 'connected' : 'disconnected'}`}>
@@ -140,21 +122,10 @@ export function PaperPositionCard({
         </div>
       </div>
 
-      {!isClosed && progress ? (
+      {!isClosed ? (
         <div className="position-progress-strip compact-progress-strip">
-          <div className="position-progress-head">
-            <strong>持仓进度</strong>
-            <span>当前持仓 {remainingPercent.toFixed(1)}%</span>
-          </div>
-          <div className="position-progress-track" aria-hidden="true">
-            <span
-              className="position-progress-bar"
-              style={{ width: `${Math.min(100, Math.max(0, remainingPercent))}%` }}
-            />
-          </div>
           <div className="position-progress-meta">
-            <span>已减仓 {reducedPercent.toFixed(1)}%</span>
-            <span>剩余市值 {formatUsdValue(valueAmount)}</span>
+            <span>当前市值 {formatUsdValue(valueAmount)}</span>
             <span>剩余成本 {formatUsdValue(remainingCostUsd)}</span>
             <span>已回收 {formatUsdValue(position.realizedProceedsUsd ?? 0)}</span>
           </div>
@@ -193,7 +164,7 @@ export function PaperPositionCard({
         </div>
         {isClosed ? (
           <div className="position-rule-item position-rule-item-wide">
-            <span className="position-mini-label">分批止盈</span>
+            <span className="position-mini-label">止盈执行</span>
             <strong className="position-rule-value">
               {formatExecutedTakeProfitLabel(position)}
               {' · '}

@@ -48,16 +48,19 @@ const REQUIRE_SOCIALS =
 const MIN_SMART_DEGEN_COUNT = Number(process.env.RADAR_MIN_SMART_DEGEN || 2);
 const MOMENTUM_CONSECUTIVE_UP = 3;
 const MAX_ALERTS_PER_ROUND = 8;
-const TRADE_SCORE_THRESHOLD = Number(process.env.RADAR_TRADE_SCORE_THRESHOLD || 76);
+// Recent strong winners often peak in the mid-60 score range on their first trigger.
+const TRADE_SCORE_THRESHOLD = Number(process.env.RADAR_TRADE_SCORE_THRESHOLD || 64);
 const TRADE_MIN_SMART_MONEY = Number(process.env.RADAR_TRADE_MIN_SMART_MONEY || 3);
-const TRADE_MAX_SIGNAL_COUNT = Number(process.env.RADAR_TRADE_MAX_SIGNAL_COUNT || 1);
+const TRADE_HEAD_ENTRY_SIGNAL_COUNT = 1;
+const TRADE_SECOND_HEAD_ENTRY_SIGNAL_COUNT = 2;
+const TRADE_MAX_SIGNAL_COUNT = Number(process.env.RADAR_TRADE_MAX_SIGNAL_COUNT || 3);
 const TRADE_MIN_LIQUIDITY = Number(process.env.RADAR_TRADE_MIN_LIQUIDITY || 15_000);
 const TRADE_MIN_VOLUME = Number(process.env.RADAR_TRADE_MIN_VOLUME || 30_000);
 const TRADE_MIN_BUY_SELL_RATIO = Number(process.env.RADAR_TRADE_MIN_BUY_SELL_RATIO || 1.4);
 const TRADE_MAX_TOKEN_AGE_HOURS = Number(process.env.RADAR_TRADE_MAX_TOKEN_AGE_HOURS || 48);
 const TRADE_HOT_MODE_CHANGE_1H = Number(process.env.RADAR_TRADE_HOT_MODE_CHANGE_1H || 50);
 const TRADE_HOT_MODE_MIN_SMART_MONEY = Number(
-  process.env.RADAR_TRADE_HOT_MODE_MIN_SMART_MONEY || 6
+  process.env.RADAR_TRADE_HOT_MODE_MIN_SMART_MONEY || 5
 );
 const TRADE_HOT_MODE_MIN_LIQUIDITY = Number(
   process.env.RADAR_TRADE_HOT_MODE_MIN_LIQUIDITY || 30_000
@@ -65,16 +68,22 @@ const TRADE_HOT_MODE_MIN_LIQUIDITY = Number(
 const TRADE_HOT_MODE_MIN_BUY_SELL_RATIO = Number(
   process.env.RADAR_TRADE_HOT_MODE_MIN_BUY_SELL_RATIO || 1.6
 );
-const TRADE_HOT_MODE_MIN_SCORE = Number(process.env.RADAR_TRADE_HOT_MODE_MIN_SCORE || 82);
+const TRADE_HOT_MODE_MIN_SCORE = Number(process.env.RADAR_TRADE_HOT_MODE_MIN_SCORE || 68);
+const TRADE_SCORE_AVG_LOOKBACK = 3;
+const TRADE_SECOND_HEAD_MIN_SCORE_DELTA = Number(process.env.RADAR_TRADE_SECOND_HEAD_MIN_SCORE_DELTA || 5);
+const TRADE_SECOND_HEAD_MIN_SCORE = Number(
+  process.env.RADAR_TRADE_SECOND_HEAD_MIN_SCORE || Math.max(TRADE_SCORE_THRESHOLD + 4, 68)
+);
 const LEGACY_PAPER_TAKE_PROFIT_PERCENT = Number(process.env.RADAR_PAPER_TP_PERCENT || 50);
-const DEFAULT_PAPER_STOP_LOSS_PERCENT = Number(process.env.RADAR_PAPER_SL_PERCENT || 25);
+const DEFAULT_PAPER_STOP_LOSS_PERCENT = Number(process.env.RADAR_PAPER_SL_PERCENT || 50);
+const MAX_PAPER_STOP_LOSS_PERCENT = Number(process.env.RADAR_PAPER_MAX_SL_PERCENT || 80);
 const DEFAULT_PAPER_TRAILING_START_PERCENT = Number(
-  process.env.RADAR_PAPER_TRAILING_START_PERCENT || 35
+  process.env.RADAR_PAPER_TRAILING_START_PERCENT || 180
 );
 const DEFAULT_PAPER_TRAILING_STOP_PERCENT = Number(
-  process.env.RADAR_PAPER_TRAILING_STOP_PERCENT || 15
+  process.env.RADAR_PAPER_TRAILING_STOP_PERCENT || 35
 );
-const DEFAULT_PAPER_TIME_STOP_HOURS = Number(process.env.RADAR_PAPER_TIME_STOP_HOURS || 6);
+const DEFAULT_PAPER_TIME_STOP_HOURS = Number(process.env.RADAR_PAPER_TIME_STOP_HOURS || 8);
 const DEFAULT_PAPER_TAKE_PROFIT_STEPS = normalizeTakeProfitSteps(
   parseTakeProfitStepsFromEnv(process.env.RADAR_PAPER_TP_STEPS) || buildLegacyTakeProfitStepsFromEnv()
 );
@@ -84,6 +93,10 @@ const PAPER_MAX_OPEN_POSITIONS = Number(process.env.RADAR_PAPER_MAX_OPEN_POSITIO
 const PAPER_MAX_CAPITAL_USAGE_PCT = Number(
   process.env.RADAR_PAPER_MAX_CAPITAL_USAGE_PCT || 25
 );
+const PAPER_MAX_SINGLE_POSITION_PCT = Number(
+  process.env.RADAR_PAPER_MAX_SINGLE_POSITION_PCT || 10
+);
+const PAPER_ENTRY_STAGE_ALLOCATIONS = [1];
 
 const TG_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TG_CHAT_ID =
@@ -195,25 +208,26 @@ function buildLegacyTakeProfitStepsFromEnv() {
 
   if (!hasLegacyConfig) {
     return [
-      { targetPercent: 40, sellPercent: 50 },
-      { targetPercent: 100, sellPercent: 30 },
+      { targetPercent: 80, sellPercent: 55 },
+      { targetPercent: 150, sellPercent: 25 },
+      { targetPercent: 260, sellPercent: 20 },
     ];
   }
 
   const steps = [
     {
-      targetPercent: Number(process.env.RADAR_PAPER_TP1_PERCENT || LEGACY_PAPER_TAKE_PROFIT_PERCENT),
-      sellPercent: Number(process.env.RADAR_PAPER_TP1_SELL_PERCENT || 50),
+      targetPercent: Number(process.env.RADAR_PAPER_TP1_PERCENT || 80),
+      sellPercent: Number(process.env.RADAR_PAPER_TP1_SELL_PERCENT || 55),
     },
     {
-      targetPercent: Number(process.env.RADAR_PAPER_TP2_PERCENT || 100),
-      sellPercent: Number(process.env.RADAR_PAPER_TP2_SELL_PERCENT || 30),
+      targetPercent: Number(process.env.RADAR_PAPER_TP2_PERCENT || 150),
+      sellPercent: Number(process.env.RADAR_PAPER_TP2_SELL_PERCENT || 25),
     },
   ];
 
   if (process.env.RADAR_PAPER_TP3_PERCENT || process.env.RADAR_PAPER_TP3_SELL_PERCENT) {
     steps.push({
-      targetPercent: Number(process.env.RADAR_PAPER_TP3_PERCENT || 150),
+      targetPercent: Number(process.env.RADAR_PAPER_TP3_PERCENT || 260),
       sellPercent: Number(process.env.RADAR_PAPER_TP3_SELL_PERCENT || 20),
     });
   }
@@ -241,7 +255,7 @@ function normalizePaperTradeSettings(input = {}) {
 
   return {
     stopLossPercent: Number.isFinite(stopLossPercent)
-      ? Math.max(5, Math.min(95, roundTo(stopLossPercent, 2)))
+      ? Math.max(5, Math.min(MAX_PAPER_STOP_LOSS_PERCENT, roundTo(stopLossPercent, 2)))
       : fallback.stopLossPercent,
     takeProfitSteps: normalizeTakeProfitSteps(input.takeProfitSteps || fallback.takeProfitSteps),
     trailingStartPercent: Number.isFinite(trailingStartPercent)
@@ -282,6 +296,19 @@ function formatCompactPrice(price) {
     return value.toFixed(6);
   }
   return value.toFixed(8);
+}
+
+function compareSignalPriority(left, right) {
+  if ((right?.token?.sm || 0) !== (left?.token?.sm || 0)) {
+    return (right?.token?.sm || 0) - (left?.token?.sm || 0);
+  }
+  if ((right?.signalCount || 0) !== (left?.signalCount || 0)) {
+    return (right?.signalCount || 0) - (left?.signalCount || 0);
+  }
+  if ((right?.pctGain || 0) !== (left?.pctGain || 0)) {
+    return (right?.pctGain || 0) - (left?.pctGain || 0);
+  }
+  return String(left?.token?.address || '').localeCompare(String(right?.token?.address || ''));
 }
 
 function getGmgnTokenUrl(chain, address) {
@@ -747,6 +774,7 @@ function initDb(options = {}) {
       signal_count INTEGER NOT NULL DEFAULT 1,
       name TEXT,
       symbol TEXT,
+      image_url TEXT,
       price REAL,
       mc REAL,
       liq REAL,
@@ -798,9 +826,11 @@ function initDb(options = {}) {
       address TEXT NOT NULL,
       name TEXT,
       symbol TEXT,
+      image_url TEXT,
       entry_signal_count INTEGER NOT NULL,
       trade_score INTEGER,
       position_size_usd REAL,
+      target_position_size_usd REAL,
       token_amount REAL,
       entry_price REAL NOT NULL,
       current_price REAL,
@@ -817,6 +847,7 @@ function initDb(options = {}) {
       buy_sell_ratio REAL,
       liquidity REAL,
       volume REAL,
+      entry_stage INTEGER DEFAULT 3,
       peak_price REAL,
       peak_pnl_pct REAL DEFAULT 0,
       UNIQUE(chain, address, entry_signal_count)
@@ -831,17 +862,26 @@ function initDb(options = {}) {
 
   const alertColumns = db.prepare('PRAGMA table_info(pushed_alerts)').all();
   const columnNames = new Set(alertColumns.map((column) => column.name));
+  if (!columnNames.has('image_url')) {
+    db.exec('ALTER TABLE pushed_alerts ADD COLUMN image_url TEXT');
+  }
   if (!columnNames.has('price')) {
     db.exec('ALTER TABLE pushed_alerts ADD COLUMN price REAL');
   }
 
   const positionColumns = db.prepare('PRAGMA table_info(paper_positions)').all();
   const positionColumnNames = new Set(positionColumns.map((column) => column.name));
+  if (!positionColumnNames.has('image_url')) {
+    db.exec('ALTER TABLE paper_positions ADD COLUMN image_url TEXT');
+  }
   if (!positionColumnNames.has('position_size_usd')) {
     db.exec('ALTER TABLE paper_positions ADD COLUMN position_size_usd REAL');
   }
   if (!positionColumnNames.has('token_amount')) {
     db.exec('ALTER TABLE paper_positions ADD COLUMN token_amount REAL');
+  }
+  if (!positionColumnNames.has('target_position_size_usd')) {
+    db.exec('ALTER TABLE paper_positions ADD COLUMN target_position_size_usd REAL');
   }
   if (!positionColumnNames.has('remaining_token_amount')) {
     db.exec('ALTER TABLE paper_positions ADD COLUMN remaining_token_amount REAL');
@@ -863,6 +903,9 @@ function initDb(options = {}) {
   }
   if (!positionColumnNames.has('peak_price')) {
     db.exec('ALTER TABLE paper_positions ADD COLUMN peak_price REAL');
+  }
+  if (!positionColumnNames.has('entry_stage')) {
+    db.exec('ALTER TABLE paper_positions ADD COLUMN entry_stage INTEGER DEFAULT 3');
   }
   if (!positionColumnNames.has('peak_pnl_pct')) {
     db.exec('ALTER TABLE paper_positions ADD COLUMN peak_pnl_pct REAL DEFAULT 0');
@@ -961,7 +1004,8 @@ function backfillPaperPositionState(db) {
   const settings = getPaperTradeSettings(db);
   const rows = db
     .prepare(
-      `SELECT id, smart_money, trade_score, entry_price, position_size_usd, token_amount,
+      `SELECT id, smart_money, trade_score, entry_price, position_size_usd, target_position_size_usd,
+              entry_stage, token_amount,
               remaining_token_amount, remaining_position_size_usd, realized_pnl_usd,
               realized_proceeds_usd, tp_stage, tp_plan_json, peak_price, peak_pnl_pct
        FROM paper_positions
@@ -971,9 +1015,9 @@ function backfillPaperPositionState(db) {
 
   const stmt = db.prepare(`
     UPDATE paper_positions
-    SET position_size_usd = ?, token_amount = ?, remaining_token_amount = ?,
+    SET position_size_usd = ?, target_position_size_usd = ?, token_amount = ?, remaining_token_amount = ?,
         remaining_position_size_usd = ?, realized_pnl_usd = ?, realized_proceeds_usd = ?,
-        tp_stage = ?, tp_plan_json = ?, peak_price = ?, peak_pnl_pct = ?
+        tp_stage = ?, tp_plan_json = ?, entry_stage = ?, peak_price = ?, peak_pnl_pct = ?
     WHERE id = ?
   `);
 
@@ -989,16 +1033,25 @@ function backfillPaperPositionState(db) {
     const remainingPositionSizeUsd = Number(
       row.remaining_position_size_usd || positionSizeUsd || 0
     );
+    const targetPositionSizeUsd = Number(row.target_position_size_usd || positionSizeUsd || 0);
     const realizedPnlUsd = Number(row.realized_pnl_usd || 0);
     const realizedProceedsUsd = Number(row.realized_proceeds_usd || 0);
     const tpStage = Number(row.tp_stage || 0);
     const tpPlanJson =
       row.tp_plan_json || JSON.stringify(normalizeTakeProfitSteps(settings.takeProfitSteps));
+    const entryStage = Math.max(
+      1,
+      Math.min(
+        PAPER_ENTRY_STAGE_ALLOCATIONS.length,
+        Number(row.entry_stage || PAPER_ENTRY_STAGE_ALLOCATIONS.length)
+      )
+    );
     const peakPrice = Number(row.peak_price || row.entry_price || 0);
     const peakPnlPct = Number(row.peak_pnl_pct || 0);
 
     stmt.run(
       positionSizeUsd,
+      targetPositionSizeUsd,
       tokenAmount,
       remainingTokenAmount,
       remainingPositionSizeUsd,
@@ -1006,6 +1059,7 @@ function backfillPaperPositionState(db) {
       realizedProceedsUsd,
       tpStage,
       tpPlanJson,
+      entryStage,
       peakPrice,
       peakPnlPct,
       row.id
@@ -1020,6 +1074,7 @@ function toAlertRecord(alert, pushedAt) {
     signalCount: alert.signalCount || 1,
     name: alert.token.name,
     symbol: alert.token.symbol,
+    imageUrl: alert.token.imageUrl || '',
     price: alert.token.price || 0,
     mc: alert.token.mc,
     liq: alert.token.liq,
@@ -1048,12 +1103,12 @@ function persistAlerts(db, alerts, pushedAt) {
 
   const insert = db.prepare(`
     INSERT OR IGNORE INTO pushed_alerts (
-      chain, address, signal_count, name, symbol, price, mc, liq, volume,
+      chain, address, signal_count, name, symbol, image_url, price, mc, liq, volume,
       smart_money, holders, buy_sell_ratio, age_hours, change_1h,
       pct_gain, stars, narrative_tag, category, twitter, telegram,
       website, message, pushed_at
     ) VALUES (
-      @chain, @address, @signalCount, @name, @symbol, @price, @mc, @liq, @volume,
+      @chain, @address, @signalCount, @name, @symbol, @imageUrl, @price, @mc, @liq, @volume,
       @smartMoney, @holders, @buySellRatio, @ageHours, @change1h,
       @pctGain, @stars, @narrativeTag, @category, @twitter, @telegram,
       @website, @message, @pushedAt
@@ -1061,10 +1116,10 @@ function persistAlerts(db, alerts, pushedAt) {
   `);
 
   let inserted = 0;
-  for (const alert of alerts) {
-    const result = insert.run(toAlertRecord(alert, pushedAt));
+  alerts.forEach((alert, index) => {
+    const result = insert.run(toAlertRecord(alert, pushedAt + index));
     inserted += result.changes;
-  }
+  });
   return inserted;
 }
 
@@ -1231,12 +1286,139 @@ function getTradeScore(alert) {
   };
 }
 
-function evaluateTradeIntent(alert) {
+function getTradeScoreHistoryFromAlert(alert) {
+  const rawHistory = Array.isArray(alert?.signalHistory) ? alert.signalHistory : [];
+  const expectedPreviousCount = Math.max(0, Number(alert?.signalCount || 0) - 1);
+  const scores = rawHistory
+    .map((entry) => Number(entry?.tradeScore))
+    .filter((score) => Number.isFinite(score));
+
+  if (expectedPreviousCount <= 0) {
+    return [];
+  }
+  if (scores.length >= expectedPreviousCount) {
+    return scores.slice(0, expectedPreviousCount);
+  }
+  return scores;
+}
+
+function getTradeScoreStats(currentScore, historyScores = []) {
+  const previousScores = historyScores
+    .map((score) => Number(score))
+    .filter((score) => Number.isFinite(score))
+    .slice(-(TRADE_SCORE_AVG_LOOKBACK - 1));
+  const recentScores = [...previousScores, Number(currentScore || 0)].slice(-TRADE_SCORE_AVG_LOOKBACK);
+  const scoreTotal = recentScores.reduce((sum, score) => sum + score, 0);
+  const averageScore = recentScores.length > 0 ? roundTo(scoreTotal / recentScores.length, 1) : 0;
+  const previousScore =
+    recentScores.length > 1 ? recentScores[recentScores.length - 2] : Number(currentScore || 0);
+  const trendDelta = roundTo(Number(currentScore || 0) - previousScore, 1);
+
+  return {
+    recentScores,
+    averageScore,
+    trendDelta,
+    previousScore,
+  };
+}
+
+function getPaperTargetPositionSizing(alert, tradePlan) {
+  const baseSizing = getPaperPositionSizing(alert, tradePlan);
+  const maxSinglePositionUsd = roundTo(
+    mulBn(PAPER_TOTAL_CAPITAL_USD, divBn(PAPER_MAX_SINGLE_POSITION_PCT, 100)),
+    2
+  );
+  const targetPositionSizeUsd = roundTo(
+    Math.min(baseSizing.positionSizeUsd, maxSinglePositionUsd || baseSizing.positionSizeUsd),
+    2
+  );
+  const targetTokenAmount =
+    Number(alert?.token?.price || 0) > 0
+      ? roundTo(divBn(targetPositionSizeUsd, Number(alert.token.price || 0)), 6)
+      : 0;
+
+  return {
+    ...baseSizing,
+    targetPositionSizeUsd,
+    targetTokenAmount,
+    maxSinglePositionUsd,
+  };
+}
+
+function getPositionEntryStage(position) {
+  return Math.max(
+    0,
+    Math.min(
+      PAPER_ENTRY_STAGE_ALLOCATIONS.length,
+      Number(position?.entry_stage ?? position?.entryStage ?? 0)
+    )
+  );
+}
+
+function getPositionTargetPositionSizeUsd(position) {
+  return Number(
+    position?.target_position_size_usd ?? position?.targetPositionSizeUsd ?? position?.position_size_usd ??
+      position?.positionSizeUsd ??
+      0
+  );
+}
+
+function getPaperEntrySizing(alert, tradePlan, position = null) {
+  const targetSizing = getPaperTargetPositionSizing(alert, tradePlan);
+  const entryPrice = Number(alert?.token?.price || 0);
+  const currentPositionSizeUsd = Number(position?.position_size_usd ?? position?.positionSizeUsd ?? 0);
+  const currentStage = getPositionEntryStage(position);
+  const targetPositionSizeUsd = position
+    ? Math.max(currentPositionSizeUsd, getPositionTargetPositionSizeUsd(position))
+    : targetSizing.targetPositionSizeUsd;
+  const nextStageIndex = position ? currentStage : 0;
+  const configuredStageUsd =
+    targetPositionSizeUsd * (PAPER_ENTRY_STAGE_ALLOCATIONS[nextStageIndex] || 0);
+  const remainingUsd = Math.max(0, roundTo(subBn(targetPositionSizeUsd, currentPositionSizeUsd), 2));
+  const stagePositionSizeUsd =
+    nextStageIndex >= PAPER_ENTRY_STAGE_ALLOCATIONS.length
+      ? 0
+      : roundTo(
+          nextStageIndex === PAPER_ENTRY_STAGE_ALLOCATIONS.length - 1
+            ? remainingUsd
+            : Math.min(configuredStageUsd, remainingUsd),
+          2
+        );
+  const tokenAmount = entryPrice > 0 ? roundTo(divBn(stagePositionSizeUsd, entryPrice), 6) : 0;
+  const nextEntryStage = Math.min(PAPER_ENTRY_STAGE_ALLOCATIONS.length, currentStage + 1);
+  const filledPositionPct =
+    targetPositionSizeUsd > 0
+      ? roundTo(
+          mulBn(
+            divBn(addBn(currentPositionSizeUsd, stagePositionSizeUsd), targetPositionSizeUsd),
+            100
+          ),
+          1
+        )
+      : 0;
+
+  return {
+    ...targetSizing,
+    positionSizeUsd: stagePositionSizeUsd,
+    tokenAmount,
+    targetPositionSizeUsd,
+    nextEntryStage,
+    filledPositionPct,
+  };
+}
+
+function evaluateTradeIntent(alert, options = {}) {
   const candidate = normalizeTradeCandidate(alert);
   const scoreInfo = getTradeScore(alert);
+  const historyScores =
+    options.historyScores || getTradeScoreHistoryFromAlert(alert);
+  const scoreStats = getTradeScoreStats(scoreInfo.score, historyScores);
+  const openPosition = options.openPosition || null;
+  const hasOpenPosition = Boolean(openPosition);
+  const currentEntryStage = getPositionEntryStage(openPosition);
   const reasons = [];
 
-  if (scoreInfo.score < TRADE_SCORE_THRESHOLD) {
+  if (!hasOpenPosition && scoreInfo.score < TRADE_SCORE_THRESHOLD) {
     reasons.push(`交易评分低于 ${TRADE_SCORE_THRESHOLD}`);
   }
   if (candidate.signalCount > TRADE_MAX_SIGNAL_COUNT) {
@@ -1272,23 +1454,61 @@ function evaluateTradeIntent(alert) {
     }
   }
 
+  let positionAction = 'open_head';
+  let successLabel = '满足链上模拟交易头仓条件';
+  if (!hasOpenPosition) {
+    if (candidate.signalCount > TRADE_SECOND_HEAD_ENTRY_SIGNAL_COUNT) {
+      reasons.push(`头仓仅允许第 ${TRADE_HEAD_ENTRY_SIGNAL_COUNT}-${TRADE_SECOND_HEAD_ENTRY_SIGNAL_COUNT} 次信号建立`);
+    } else if (candidate.signalCount > TRADE_HEAD_ENTRY_SIGNAL_COUNT) {
+      const hasPreviousScore = historyScores.length > 0;
+      const previousScore = Number(scoreStats.previousScore || 0);
+      const scoreDelta = scoreInfo.score - previousScore;
+      const scoreStrengthenedEnough = scoreDelta >= TRADE_SECOND_HEAD_MIN_SCORE_DELTA;
+
+      positionAction = 'open_head_retry';
+      successLabel = `第2次信号评分至少走强 ${TRADE_SECOND_HEAD_MIN_SCORE_DELTA} 分，允许补开头仓`;
+
+      if (!hasPreviousScore) {
+        reasons.push('缺少上一次评分记录，暂不允许第2次信号补开头仓');
+      } else if (scoreInfo.score < TRADE_SECOND_HEAD_MIN_SCORE) {
+        reasons.push(`第2次补开头仓评分低于 ${TRADE_SECOND_HEAD_MIN_SCORE}`);
+      } else if (!scoreStrengthenedEnough) {
+        reasons.push(
+          `第2次信号评分走强不足 ${TRADE_SECOND_HEAD_MIN_SCORE_DELTA} 分 (${scoreInfo.score} vs ${previousScore})`
+        );
+      }
+    }
+  } else {
+    positionAction = 'hold_existing';
+    successLabel = '已有打开持仓，头仓已一次性买满';
+    reasons.push('已持有目标仓位，当前策略不再分批加仓');
+  }
+
   return {
     tradeScore: scoreInfo.score,
     scoreBreakdown: scoreInfo.parts,
     buySellRatio: scoreInfo.buySellRatio,
+    scoreStats,
     approved: reasons.length === 0,
-    decisionReason: reasons.length === 0 ? '满足链上模拟交易开仓条件' : reasons.join(' | '),
-    intentStatus: reasons.length === 0 ? 'approved' : 'rejected',
+    decisionReason:
+      reasons.length === 0
+        ? `${successLabel} | 最近${scoreStats.recentScores.length}次均分 ${scoreStats.averageScore}`
+        : reasons.join(' | '),
+    intentStatus: reasons.length === 0 ? 'approved' : hasOpenPosition ? 'skipped' : 'rejected',
+    positionAction,
   };
 }
 
-function hasOpenPaperPosition(db, chain, address) {
-  const row = db
+function getOpenPaperPosition(db, chain, address) {
+  return db
     .prepare(
-      'SELECT id FROM paper_positions WHERE chain = ? AND address = ? AND status = ? LIMIT 1'
+      `SELECT *
+       FROM paper_positions
+       WHERE chain = ? AND address = ? AND status = ?
+       ORDER BY opened_at DESC, id DESC
+       LIMIT 1`
     )
     .get(chain, address, 'open');
-  return Boolean(row);
 }
 
 function getOpenPaperPositionCount(db) {
@@ -1353,28 +1573,46 @@ function getPaperPositionSizing(alert, tradePlan) {
   );
 }
 
+function getRecentTradeScores(db, chain, address, limit = TRADE_SCORE_AVG_LOOKBACK - 1) {
+  return db
+    .prepare(
+      `SELECT trade_score
+       FROM trade_intents
+       WHERE chain = ? AND address = ? AND trade_score IS NOT NULL
+       ORDER BY created_at DESC, id DESC
+       LIMIT ?`
+    )
+    .all(chain, address, limit)
+    .reverse()
+    .map((row) => Number(row.trade_score))
+    .filter((score) => Number.isFinite(score));
+}
+
 function openPaperPosition(db, alert, tradePlan, createdAt, sizing) {
   const settings = getPaperTradeSettings(db);
-  const finalSizing = sizing || getPaperPositionSizing(alert, tradePlan);
+  const finalSizing = sizing || getPaperEntrySizing(alert, tradePlan);
   const takeProfitSteps = normalizeTakeProfitSteps(settings.takeProfitSteps);
   const entryPrice = Number(alert.token.price || 0);
   db.prepare(`
     INSERT OR IGNORE INTO paper_positions (
-      chain, address, name, symbol, entry_signal_count, trade_score, position_size_usd,
+      chain, address, name, symbol, image_url, entry_signal_count, trade_score, position_size_usd,
+      target_position_size_usd,
       token_amount, remaining_token_amount, remaining_position_size_usd,
       realized_pnl_usd, realized_proceeds_usd, tp_stage, tp_plan_json,
       entry_price, current_price, take_profit_pct, stop_loss_pct, status,
-      opened_at, updated_at, smart_money, buy_sell_ratio, liquidity, volume,
+      opened_at, updated_at, smart_money, buy_sell_ratio, liquidity, volume, entry_stage,
       peak_price, peak_pnl_pct
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     alert.token.chain,
     alert.token.address,
     alert.token.name,
     alert.token.symbol,
+    alert.token.imageUrl || '',
     alert.signalCount,
     tradePlan.tradeScore,
     finalSizing.positionSizeUsd,
+    finalSizing.targetPositionSizeUsd,
     finalSizing.tokenAmount,
     finalSizing.tokenAmount,
     finalSizing.positionSizeUsd,
@@ -1393,8 +1631,71 @@ function openPaperPosition(db, alert, tradePlan, createdAt, sizing) {
     tradePlan.buySellRatio,
     alert.token.liq || 0,
     alert.token.volume || 0,
+    finalSizing.nextEntryStage,
     entryPrice,
     0
+  );
+}
+
+function scaleIntoPaperPosition(db, position, alert, tradePlan, createdAt, sizing) {
+  const addPositionUsd = Number(sizing?.positionSizeUsd || 0);
+  const addTokenAmount = Number(sizing?.tokenAmount || 0);
+  if (addPositionUsd <= 0 || addTokenAmount <= 0) {
+    return;
+  }
+
+  const currentPrice = Number(alert.token.price || 0);
+  const currentPositionSizeUsd = Number(position.position_size_usd || 0);
+  const currentTokenAmount = Number(position.token_amount || 0);
+  const currentRemainingPositionUsd = Number(
+    position.remaining_position_size_usd || currentPositionSizeUsd || 0
+  );
+  const currentRemainingTokenAmount = Number(
+    position.remaining_token_amount || currentTokenAmount || 0
+  );
+  const nextPositionSizeUsd = roundTo(addBn(currentPositionSizeUsd, addPositionUsd), 6);
+  const nextTokenAmount = roundTo(addBn(currentTokenAmount, addTokenAmount), 6);
+  const nextRemainingPositionUsd = roundTo(addBn(currentRemainingPositionUsd, addPositionUsd), 6);
+  const nextRemainingTokenAmount = roundTo(addBn(currentRemainingTokenAmount, addTokenAmount), 6);
+  const nextEntryPrice =
+    nextTokenAmount > 0 ? roundTo(divBn(nextPositionSizeUsd, nextTokenAmount), 8) : currentPrice;
+  const peakPrice = Math.max(Number(position.peak_price || 0), currentPrice, nextEntryPrice);
+  const peakPnlPct =
+    nextPositionSizeUsd > 0
+      ? roundTo(
+          mulBn(
+            divBn(subBn(mulBn(peakPrice, nextTokenAmount), nextPositionSizeUsd), nextPositionSizeUsd),
+            100
+          ),
+          2
+        )
+      : 0;
+
+  db.prepare(`
+    UPDATE paper_positions
+    SET trade_score = ?, position_size_usd = ?, target_position_size_usd = ?, token_amount = ?,
+        remaining_token_amount = ?, remaining_position_size_usd = ?, entry_price = ?,
+        current_price = ?, updated_at = ?, smart_money = ?, buy_sell_ratio = ?, liquidity = ?,
+        volume = ?, entry_stage = ?, peak_price = ?, peak_pnl_pct = ?
+    WHERE id = ?
+  `).run(
+    tradePlan.tradeScore,
+    nextPositionSizeUsd,
+    sizing.targetPositionSizeUsd,
+    nextTokenAmount,
+    nextRemainingTokenAmount,
+    nextRemainingPositionUsd,
+    nextEntryPrice,
+    currentPrice,
+    createdAt,
+    alert.token.sm || 0,
+    tradePlan.buySellRatio,
+    alert.token.liq || 0,
+    alert.token.volume || 0,
+    sizing.nextEntryStage,
+    peakPrice,
+    peakPnlPct,
+    position.id
   );
 }
 
@@ -1808,6 +2109,10 @@ function normalizeRuntimePaperPositions(paperPositionsMap = new Map()) {
     realizedPnlUsd: Number(position.realizedPnlUsd || 0),
     realizedProceedsUsd: Number(position.realizedProceedsUsd || 0),
     tpStage: Number(position.tpStage || 0),
+    targetPositionSizeUsd: Number(
+      position.targetPositionSizeUsd ?? position.positionSizeUsd ?? 0
+    ),
+    entryStage: Number(position.entryStage || PAPER_ENTRY_STAGE_ALLOCATIONS.length),
     entryPrice: Number(position.entryPrice || 0),
     currentPrice: Number(position.currentPrice || 0),
     peakPrice: Number(position.peakPrice ?? position.currentPrice ?? position.entryPrice ?? 0),
@@ -1825,9 +2130,11 @@ function normalizeRuntimePaperPositions(paperPositionsMap = new Map()) {
   }));
 }
 
-function hasOpenPaperPositionInMemory(positions, chain, address) {
-  return positions.some(
-    (position) => position.chain === chain && position.address === address && position.status === 'open'
+function getOpenPaperPositionInMemory(positions, chain, address) {
+  return (
+    positions.find(
+      (position) => position.chain === chain && position.address === address && position.status === 'open'
+    ) || null
   );
 }
 
@@ -1882,7 +2189,7 @@ function getPaperAccountSummaryFromPositions(positions) {
 }
 
 function openPaperPositionInMemory(alert, tradePlan, createdAt, sizing, settings) {
-  const finalSizing = sizing || getPaperPositionSizing(alert, tradePlan);
+  const finalSizing = sizing || getPaperEntrySizing(alert, tradePlan);
   const takeProfitSteps = normalizeTakeProfitSteps(settings.takeProfitSteps);
   const openedAtIso = new Date(createdAt * 1000).toISOString();
   const entryPrice = Number(alert.token.price || 0);
@@ -1893,9 +2200,11 @@ function openPaperPositionInMemory(alert, tradePlan, createdAt, sizing, settings
     address: alert.token.address,
     name: alert.token.name,
     symbol: alert.token.symbol,
+    imageUrl: alert.token.imageUrl || '',
     entrySignalCount: alert.signalCount,
     tradeScore: tradePlan.tradeScore,
     positionSizeUsd: finalSizing.positionSizeUsd,
+    targetPositionSizeUsd: finalSizing.targetPositionSizeUsd,
     tokenAmount: finalSizing.tokenAmount,
     remainingTokenAmount: finalSizing.tokenAmount,
     remainingPositionSizeUsd: finalSizing.positionSizeUsd,
@@ -1921,8 +2230,62 @@ function openPaperPositionInMemory(alert, tradePlan, createdAt, sizing, settings
     buySellRatio: tradePlan.buySellRatio,
     liquidity: alert.token.liq || 0,
     volume: alert.token.volume || 0,
+    entryStage: finalSizing.nextEntryStage,
     currentValueUsd: finalSizing.positionSizeUsd,
     pnlUsd: 0,
+  };
+}
+
+function scaleIntoPaperPositionInMemory(position, alert, tradePlan, createdAt, sizing) {
+  const addPositionUsd = Number(sizing?.positionSizeUsd || 0);
+  const addTokenAmount = Number(sizing?.tokenAmount || 0);
+  if (addPositionUsd <= 0 || addTokenAmount <= 0) {
+    return position;
+  }
+
+  const currentPrice = Number(alert.token.price || 0);
+  const currentPositionSizeUsd = Number(position.positionSizeUsd || 0);
+  const currentTokenAmount = Number(position.tokenAmount || 0);
+  const currentRemainingPositionUsd = Number(position.remainingPositionSizeUsd ?? currentPositionSizeUsd);
+  const currentRemainingTokenAmount = Number(position.remainingTokenAmount ?? currentTokenAmount);
+  const nextPositionSizeUsd = roundTo(addBn(currentPositionSizeUsd, addPositionUsd), 6);
+  const nextTokenAmount = roundTo(addBn(currentTokenAmount, addTokenAmount), 6);
+  const nextRemainingPositionUsd = roundTo(addBn(currentRemainingPositionUsd, addPositionUsd), 6);
+  const nextRemainingTokenAmount = roundTo(addBn(currentRemainingTokenAmount, addTokenAmount), 6);
+  const nextEntryPrice =
+    nextTokenAmount > 0 ? roundTo(divBn(nextPositionSizeUsd, nextTokenAmount), 8) : currentPrice;
+  const peakPrice = Math.max(Number(position.peakPrice || 0), currentPrice, nextEntryPrice);
+  const peakPnlPct =
+    nextPositionSizeUsd > 0
+      ? roundTo(
+          mulBn(
+            divBn(subBn(mulBn(peakPrice, nextTokenAmount), nextPositionSizeUsd), nextPositionSizeUsd),
+            100
+          ),
+          2
+        )
+      : 0;
+
+  return {
+    ...position,
+    tradeScore: tradePlan.tradeScore,
+    positionSizeUsd: nextPositionSizeUsd,
+    targetPositionSizeUsd: sizing.targetPositionSizeUsd,
+    tokenAmount: nextTokenAmount,
+    remainingTokenAmount: nextRemainingTokenAmount,
+    remainingPositionSizeUsd: nextRemainingPositionUsd,
+    entryPrice: nextEntryPrice,
+    currentPrice,
+    updatedAt: new Date(createdAt * 1000).toISOString(),
+    smartMoney: alert.token.sm || 0,
+    buySellRatio: tradePlan.buySellRatio,
+    liquidity: alert.token.liq || 0,
+    volume: alert.token.volume || 0,
+    entryStage: sizing.nextEntryStage,
+    peakPrice: roundTo(peakPrice, 8),
+    peakPnlPct,
+    currentValueUsd: roundTo(mulBn(nextRemainingTokenAmount, currentPrice), 2),
+    pnlUsd: roundTo(subBn(mulBn(nextRemainingTokenAmount, currentPrice), nextRemainingPositionUsd), 2),
   };
 }
 
@@ -2147,10 +2510,27 @@ function updatePaperPositionsInMemory(positions, tokens, updatedAt, settings) {
   });
 }
 
-function processTradePlansInMemory(positions, alerts, tokens, createdAt, settings) {
+function buildHistoryScoreMapFromAlerts(alerts = []) {
+  const map = new Map();
+  for (const alert of alerts) {
+    if (!alert?.chain || !alert?.address) {
+      continue;
+    }
+    const scores = getTradeScoreHistoryFromAlert(alert);
+    if (scores.length > 0) {
+      map.set(`${alert.chain}:${alert.address}`, scores);
+    }
+  }
+  return map;
+}
+
+function processTradePlansInMemory(positions, alerts, tokens, createdAt, settings, historyScoreMap = new Map()) {
   const nextPositions = updatePaperPositionsInMemory(positions, tokens, createdAt, settings);
   const candidates = alerts
-    .map((alert) => ({ alert, tradePlan: evaluateTradeIntent(alert) }))
+    .map((alert) => {
+      const historyScores = historyScoreMap.get(`${alert.token.chain}:${alert.token.address}`) || [];
+      return { alert, tradePlan: evaluateTradeIntent(alert, { historyScores }) };
+    })
     .sort((left, right) => {
       if ((right.tradePlan.tradeScore || 0) !== (left.tradePlan.tradeScore || 0)) {
         return (right.tradePlan.tradeScore || 0) - (left.tradePlan.tradeScore || 0);
@@ -2161,46 +2541,64 @@ function processTradePlansInMemory(positions, alerts, tokens, createdAt, setting
       return (right.alert.pctGain || 0) - (left.alert.pctGain || 0);
     });
 
-  for (const { alert, tradePlan } of candidates) {
-    if (hasOpenPaperPositionInMemory(nextPositions, alert.token.chain, alert.token.address)) {
-      tradePlan.approved = false;
-      tradePlan.intentStatus = 'skipped';
-      tradePlan.decisionReason = '已有打开的纸上持仓';
-    }
-
-    const sizing = getPaperPositionSizing(alert, tradePlan);
-    if (tradePlan.approved) {
+  for (const { alert } of candidates) {
+    const historyScores = historyScoreMap.get(`${alert.token.chain}:${alert.token.address}`) || [];
+    const openPosition = getOpenPaperPositionInMemory(
+      nextPositions,
+      alert.token.chain,
+      alert.token.address
+    );
+    const evaluatedPlan = evaluateTradeIntent(alert, { historyScores, openPosition });
+    const sizing = getPaperEntrySizing(alert, evaluatedPlan, openPosition);
+    if (evaluatedPlan.approved) {
       const account = getPaperAccountSummaryFromPositions(nextPositions);
-      const openCount = getOpenPaperPositionCountInMemory(nextPositions);
       const nextUsedCapitalUsd = account.usedCapitalUsd + sizing.positionSizeUsd;
       const nextUsagePct =
         PAPER_TOTAL_CAPITAL_USD > 0 ? (nextUsedCapitalUsd / PAPER_TOTAL_CAPITAL_USD) * 100 : 0;
 
-      if (openCount >= PAPER_MAX_OPEN_POSITIONS) {
-        tradePlan.approved = false;
-        tradePlan.intentStatus = 'rejected';
-        tradePlan.decisionReason = `打开持仓数已达上限 ${PAPER_MAX_OPEN_POSITIONS}`;
+      if (!openPosition && getOpenPaperPositionCountInMemory(nextPositions) >= PAPER_MAX_OPEN_POSITIONS) {
+        evaluatedPlan.approved = false;
+        evaluatedPlan.intentStatus = 'rejected';
+        evaluatedPlan.decisionReason = `打开持仓数已达上限 ${PAPER_MAX_OPEN_POSITIONS}`;
+      } else if (sizing.positionSizeUsd <= 0) {
+        evaluatedPlan.approved = false;
+        evaluatedPlan.intentStatus = openPosition ? 'skipped' : 'rejected';
+        evaluatedPlan.decisionReason = openPosition ? '目标仓位已完成' : '头仓目标仓位无效';
       } else if (nextUsagePct > PAPER_MAX_CAPITAL_USAGE_PCT) {
-        tradePlan.approved = false;
-        tradePlan.intentStatus = 'rejected';
-        tradePlan.decisionReason = `资金使用率将达 ${nextUsagePct.toFixed(1)}%，超过上限 ${PAPER_MAX_CAPITAL_USAGE_PCT}%`;
+        evaluatedPlan.approved = false;
+        evaluatedPlan.intentStatus = 'rejected';
+        evaluatedPlan.decisionReason = `资金使用率将达 ${nextUsagePct.toFixed(1)}%，超过上限 ${PAPER_MAX_CAPITAL_USAGE_PCT}%`;
       }
     }
 
-    if (tradePlan.approved) {
+    if (evaluatedPlan.approved) {
       const account = getPaperAccountSummaryFromPositions(nextPositions);
       if (sizing.positionSizeUsd > account.availableUsd) {
-        tradePlan.approved = false;
-        tradePlan.intentStatus = 'rejected';
-        tradePlan.decisionReason = `可用余额不足，需 ${sizing.positionSizeUsd.toFixed(2)} USD，剩余 ${account.availableUsd.toFixed(2)} USD`;
+        evaluatedPlan.approved = false;
+        evaluatedPlan.intentStatus = 'rejected';
+        evaluatedPlan.decisionReason = `可用余额不足，需 ${sizing.positionSizeUsd.toFixed(2)} USD，剩余 ${account.availableUsd.toFixed(2)} USD`;
       }
     }
 
-    if (tradePlan.approved) {
-      nextPositions.push(openPaperPositionInMemory(alert, tradePlan, createdAt, sizing, settings));
+    if (evaluatedPlan.approved) {
+      if (openPosition) {
+        const nextPosition = scaleIntoPaperPositionInMemory(
+          openPosition,
+          alert,
+          evaluatedPlan,
+          createdAt,
+          sizing
+        );
+        const index = nextPositions.findIndex((position) => position.id === openPosition.id);
+        if (index >= 0) {
+          nextPositions[index] = nextPosition;
+        }
+      } else {
+        nextPositions.push(openPaperPositionInMemory(alert, evaluatedPlan, createdAt, sizing, settings));
+      }
     }
 
-    alert.tradePlan = tradePlan;
+    alert.tradePlan = evaluatedPlan;
   }
 
   return nextPositions;
@@ -2210,7 +2608,10 @@ function processTradePlans(db, alerts, tokens, createdAt) {
   updatePaperPositions(db, tokens, createdAt);
 
   const candidates = alerts
-    .map((alert) => ({ alert, tradePlan: evaluateTradeIntent(alert) }))
+    .map((alert) => {
+      const historyScores = getRecentTradeScores(db, alert.token.chain, alert.token.address);
+      return { alert, tradePlan: evaluateTradeIntent(alert, { historyScores }) };
+    })
     .sort((left, right) => {
       if ((right.tradePlan.tradeScore || 0) !== (left.tradePlan.tradeScore || 0)) {
         return (right.tradePlan.tradeScore || 0) - (left.tradePlan.tradeScore || 0);
@@ -2221,48 +2622,52 @@ function processTradePlans(db, alerts, tokens, createdAt) {
       return (right.alert.pctGain || 0) - (left.alert.pctGain || 0);
     });
 
-  for (const { alert, tradePlan } of candidates) {
-    if (hasOpenPaperPosition(db, alert.token.chain, alert.token.address)) {
-      tradePlan.approved = false;
-      tradePlan.intentStatus = 'skipped';
-      tradePlan.decisionReason = '已有打开的纸上持仓';
-    }
-
-    const sizing = getPaperPositionSizing(alert, tradePlan);
-    if (tradePlan.approved) {
+  for (const { alert } of candidates) {
+    const openPosition = getOpenPaperPosition(db, alert.token.chain, alert.token.address);
+    const historyScores = getRecentTradeScores(db, alert.token.chain, alert.token.address);
+    const evaluatedPlan = evaluateTradeIntent(alert, { historyScores, openPosition });
+    const sizing = getPaperEntrySizing(alert, evaluatedPlan, openPosition);
+    if (evaluatedPlan.approved) {
       const account = getPaperAccountSummary(db);
-      const openCount = getOpenPaperPositionCount(db);
       const nextUsedCapitalUsd = account.usedCapitalUsd + sizing.positionSizeUsd;
       const nextUsagePct =
         PAPER_TOTAL_CAPITAL_USD > 0 ? (nextUsedCapitalUsd / PAPER_TOTAL_CAPITAL_USD) * 100 : 0;
 
-      if (openCount >= PAPER_MAX_OPEN_POSITIONS) {
-        tradePlan.approved = false;
-        tradePlan.intentStatus = 'rejected';
-        tradePlan.decisionReason = `打开持仓数已达上限 ${PAPER_MAX_OPEN_POSITIONS}`;
+      if (!openPosition && getOpenPaperPositionCount(db) >= PAPER_MAX_OPEN_POSITIONS) {
+        evaluatedPlan.approved = false;
+        evaluatedPlan.intentStatus = 'rejected';
+        evaluatedPlan.decisionReason = `打开持仓数已达上限 ${PAPER_MAX_OPEN_POSITIONS}`;
+      } else if (sizing.positionSizeUsd <= 0) {
+        evaluatedPlan.approved = false;
+        evaluatedPlan.intentStatus = openPosition ? 'skipped' : 'rejected';
+        evaluatedPlan.decisionReason = openPosition ? '目标仓位已完成' : '头仓目标仓位无效';
       } else if (nextUsagePct > PAPER_MAX_CAPITAL_USAGE_PCT) {
-        tradePlan.approved = false;
-        tradePlan.intentStatus = 'rejected';
-        tradePlan.decisionReason = `资金使用率将达 ${nextUsagePct.toFixed(1)}%，超过上限 ${PAPER_MAX_CAPITAL_USAGE_PCT}%`;
+        evaluatedPlan.approved = false;
+        evaluatedPlan.intentStatus = 'rejected';
+        evaluatedPlan.decisionReason = `资金使用率将达 ${nextUsagePct.toFixed(1)}%，超过上限 ${PAPER_MAX_CAPITAL_USAGE_PCT}%`;
       }
     }
 
-    if (tradePlan.approved) {
+    if (evaluatedPlan.approved) {
       const account = getPaperAccountSummary(db);
       if (sizing.positionSizeUsd > account.availableUsd) {
-        tradePlan.approved = false;
-        tradePlan.intentStatus = 'rejected';
-        tradePlan.decisionReason = `可用余额不足，需 ${sizing.positionSizeUsd.toFixed(2)} USD，剩余 ${account.availableUsd.toFixed(2)} USD`;
+        evaluatedPlan.approved = false;
+        evaluatedPlan.intentStatus = 'rejected';
+        evaluatedPlan.decisionReason = `可用余额不足，需 ${sizing.positionSizeUsd.toFixed(2)} USD，剩余 ${account.availableUsd.toFixed(2)} USD`;
       }
     }
 
-    recordTradeIntent(db, alert, tradePlan, createdAt);
+    recordTradeIntent(db, alert, evaluatedPlan, createdAt);
 
-    if (tradePlan.approved) {
-      openPaperPosition(db, alert, tradePlan, createdAt, sizing);
+    if (evaluatedPlan.approved) {
+      if (openPosition) {
+        scaleIntoPaperPosition(db, openPosition, alert, evaluatedPlan, createdAt, sizing);
+      } else {
+        openPaperPosition(db, alert, evaluatedPlan, createdAt, sizing);
+      }
     }
 
-    alert.tradePlan = tradePlan;
+    alert.tradePlan = evaluatedPlan;
   }
 }
 
@@ -2337,9 +2742,11 @@ function getPaperPositions(db, status = 'open', limit = 20) {
       address: row.address,
       name: row.name,
       symbol: row.symbol,
+      imageUrl: row.image_url || '',
       entrySignalCount: row.entry_signal_count,
       tradeScore: row.trade_score,
       positionSizeUsd: Number(row.position_size_usd || 0),
+      targetPositionSizeUsd: Number(row.target_position_size_usd || row.position_size_usd || 0),
       tokenAmount: Number(row.token_amount || 0),
       remainingTokenAmount,
       remainingPositionSizeUsd,
@@ -2361,6 +2768,7 @@ function getPaperPositions(db, status = 'open', limit = 20) {
       realizedPnlUsd,
       realizedProceedsUsd: Number(row.realized_proceeds_usd || 0),
       tpStage: Number(row.tp_stage || 0),
+      entryStage: Number(row.entry_stage || PAPER_ENTRY_STAGE_ALLOCATIONS.length),
       openedAt: row.opened_at ? new Date(row.opened_at * 1000).toISOString() : null,
       updatedAt: row.updated_at ? new Date(row.updated_at * 1000).toISOString() : null,
       closedAt: row.closed_at ? new Date(row.closed_at * 1000).toISOString() : null,
@@ -2390,7 +2798,10 @@ function enrichAlertsWithTradeState(db, alerts) {
   return alerts.map((alert) => {
     const intent = intentStmt.get(alert.chain, alert.address);
     const position = positionStmt.get(alert.chain, alert.address);
-    const previewPlan = evaluateTradeIntent(alert);
+    const previewPlan = evaluateTradeIntent(alert, {
+      historyScores: getTradeScoreHistoryFromAlert(alert),
+      openPosition: position?.status === 'open' ? position : null,
+    });
     const paperTradeSettings = getPaperTradeSettings(db);
     const takeProfitSteps = position
       ? getPositionTakeProfitSteps(position, paperTradeSettings)
@@ -2406,6 +2817,8 @@ function enrichAlertsWithTradeState(db, alerts) {
         : null,
       paperPositionStatus: position?.status || '',
       paperPositionSizeUsd: position?.position_size_usd ?? null,
+      paperTargetPositionSizeUsd:
+        position?.target_position_size_usd ?? position?.position_size_usd ?? null,
       paperTokenAmount: position?.token_amount ?? null,
       paperEntryPrice: position?.entry_price ?? null,
       paperCurrentPrice: position?.current_price ?? null,
@@ -2419,6 +2832,7 @@ function enrichAlertsWithTradeState(db, alerts) {
       paperTakeProfitSteps: takeProfitSteps,
       paperTpStage: position?.tp_stage ?? 0,
       paperStopLossPct: position?.stop_loss_pct ?? paperTradeSettings.stopLossPercent,
+      paperEntryStage: position?.entry_stage ?? PAPER_ENTRY_STAGE_ALLOCATIONS.length,
     };
   });
 }
@@ -2427,35 +2841,42 @@ function getRecentPersistedAlerts(db, limit = 50) {
   const fetchLimit = Math.min(Math.max(limit * 20, 200), 2_000);
   const rows = db.prepare(`
     SELECT
-      chain,
-      address,
-      signal_count,
-      name,
-      symbol,
-      price,
-      mc,
-      liq,
-      volume,
-      smart_money,
-      holders,
-      buy_sell_ratio,
-      age_hours,
-      change_1h,
-      pct_gain,
-      stars,
-      narrative_tag,
-      category,
-      twitter,
-      telegram,
-      website,
-      message,
-      pushed_at
-    FROM pushed_alerts
-    ORDER BY pushed_at DESC, id DESC
+      alerts.chain,
+      alerts.address,
+      alerts.signal_count,
+      alerts.name,
+      alerts.symbol,
+      alerts.image_url,
+      alerts.price,
+      alerts.mc,
+      alerts.liq,
+      alerts.volume,
+      alerts.smart_money,
+      alerts.holders,
+      alerts.buy_sell_ratio,
+      alerts.age_hours,
+      alerts.change_1h,
+      alerts.pct_gain,
+      alerts.stars,
+      alerts.narrative_tag,
+      alerts.category,
+      alerts.twitter,
+      alerts.telegram,
+      alerts.website,
+      alerts.message,
+      alerts.pushed_at,
+      intents.trade_score
+    FROM pushed_alerts AS alerts
+    LEFT JOIN trade_intents AS intents
+      ON intents.chain = alerts.chain
+     AND intents.address = alerts.address
+     AND intents.signal_count = alerts.signal_count
+    ORDER BY alerts.pushed_at DESC, alerts.id DESC
     LIMIT ?
   `).all(fetchLimit);
 
   const groups = new Map();
+  let latestSignal = null;
 
   for (const row of rows) {
     const key = `${row.chain}:${row.address}`;
@@ -2465,7 +2886,29 @@ function getRecentPersistedAlerts(db, limit = 50) {
       pushedAt,
       pctGain: row.pct_gain,
       price: row.price,
+      tradeScore: row.trade_score,
     };
+
+    if (!latestSignal) {
+      latestSignal = {
+        chain: row.chain,
+        address: row.address,
+        signalCount: row.signal_count,
+        name: row.name,
+        symbol: row.symbol,
+        imageUrl: row.image_url || '',
+        price: row.price,
+        pushedAt,
+        pctGain: row.pct_gain,
+        smartMoney: row.smart_money,
+        tradeScore: row.trade_score,
+        narrativeTag: row.narrative_tag,
+        category: row.category,
+        twitter: row.twitter || '',
+        telegram: row.telegram || '',
+        website: row.website || '',
+      };
+    }
 
     if (!groups.has(key)) {
       if (groups.size >= limit) {
@@ -2476,6 +2919,7 @@ function getRecentPersistedAlerts(db, limit = 50) {
         address: row.address,
         name: row.name,
         symbol: row.symbol,
+        imageUrl: row.image_url || '',
         chain: row.chain,
         price: row.price,
         mc: row.mc,
@@ -2529,29 +2973,31 @@ function getRecentPersistedAlerts(db, limit = 50) {
     return (b.pctGain || 0) - (a.pctGain || 0);
   });
 
-  return enrichAlertsWithTradeState(db, groupedAlerts);
+  return {
+    alerts: enrichAlertsWithTradeState(db, groupedAlerts),
+    latestSignal,
+  };
 }
 
 function getSignalTimeline(db, maxPoints = 1500) {
   const safeLimit = Number.isFinite(maxPoints) ? Math.min(Math.max(maxPoints, 100), 5_000) : 1500;
   const rows = db.prepare(`
-    SELECT name, symbol, address, price, signal_count, pushed_at
+    SELECT name, symbol, address, image_url, price, signal_count, pushed_at
     FROM pushed_alerts
-    ORDER BY pushed_at DESC, id DESC
+    ORDER BY pushed_at ASC, id ASC
     LIMIT ?
   `).all(safeLimit);
 
-  return rows
-    .reverse()
-    .map((row, index) => ({
-      time: new Date(row.pushed_at * 1000).toISOString(),
-      signalCount: row.signal_count,
-      cumulativeCount: index + 1,
-      name: row.name,
-      symbol: row.symbol,
-      address: row.address,
-      price: row.price,
-    }));
+  return rows.map((row, index) => ({
+    time: new Date(row.pushed_at * 1000).toISOString(),
+    signalCount: row.signal_count,
+    cumulativeCount: index + 1,
+    name: row.name,
+    symbol: row.symbol,
+    imageUrl: row.image_url || '',
+    address: row.address,
+    price: row.price,
+  }));
 }
 
 function createEmptyRadarSnapshot(limit = 60, options = {}) {
@@ -2569,6 +3015,7 @@ function createEmptyRadarSnapshot(limit = 60, options = {}) {
     persistedThisRound: 0,
     totalPersisted: 0,
     totalPersistedTokens: 0,
+    latestSignal: null,
     paperSummary: getPaperAccountSummaryFromPositions([]),
     paperPositions: [],
     closedPaperPositions: [],
@@ -2608,7 +3055,7 @@ export async function getPersistedRadarSnapshot(limit = 60) {
 
   const db = initDb();
   const safeLimit = Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 120) : 60;
-  const alerts = getRecentPersistedAlerts(db, safeLimit);
+  const { alerts, latestSignal } = getRecentPersistedAlerts(db, safeLimit);
   const totalPersisted =
     db.prepare('SELECT COUNT(*) AS count FROM pushed_alerts').get().count || 0;
   const totalPersistedTokens =
@@ -2644,6 +3091,7 @@ export async function getPersistedRadarSnapshot(limit = 60) {
       scanning: 0,
     },
     alerts,
+    latestSignal: latestSignal || alerts[0] || null,
     signalTimeline,
     rows: [],
     config,
@@ -3280,12 +3728,20 @@ async function tgSend(text) {
 }
 
 async function gmgnGet(url) {
-  try {
-    const json = await fetchJson(url, { headers: GMGN_HEADERS });
-    return json.data || {};
-  } catch {
-    return {};
+  let lastReason = 'unknown error';
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const json = await fetchJson(url, { headers: GMGN_HEADERS });
+      return json.data || {};
+    } catch (error) {
+      lastReason = error instanceof Error ? error.message : String(error);
+      if (attempt < 3) {
+        await sleep(400 * attempt);
+      }
+    }
   }
+
+  throw new Error(`GMGN 请求失败(重试3次): ${lastReason}`);
 }
 
 async function fetchTokenDescription(chain, address) {
@@ -3361,6 +3817,16 @@ function mapToken(chain, token, overrides = {}) {
     chain,
     name: token.name || '?',
     symbol: token.symbol || '?',
+    imageUrl:
+      token.logo ||
+      token.logo_uri ||
+      token.logoURI ||
+      token.image ||
+      token.image_uri ||
+      token.imageUrl ||
+      token.icon ||
+      token.icon_url ||
+      '',
     mc: marketCap,
     liq: liquidity,
     volume: Number(token.volume || 0),
@@ -3477,6 +3943,7 @@ async function fetchNewTokens() {
   const allTokens = [];
   const seenAddrs = new Set();
   const chains = ['sol'];
+  const requestErrors = [];
 
   for (const chain of chains) {
     const urls = [
@@ -3485,7 +3952,14 @@ async function fetchNewTokens() {
     ];
 
     for (const url of urls) {
-      const data = await gmgnGet(url);
+      let data;
+      try {
+        data = await gmgnGet(url);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        requestErrors.push(`${url} -> ${reason}`);
+        continue;
+      }
       const rank = data.rank || [];
 
       for (const token of rank) {
@@ -3506,6 +3980,13 @@ async function fetchNewTokens() {
       }
 
       await sleep(300);
+    }
+  }
+
+  if (allTokens.length === 0 && requestErrors.length > 0) {
+    log('[GMGN] 候选币列表获取失败，当前返回 0 个候选币。');
+    for (const error of requestErrors.slice(0, 3)) {
+      log(`[GMGN] ${error}`);
     }
   }
 
@@ -3768,6 +4249,7 @@ export function getRadarConfig(db = null) {
     tradeScoreThreshold: TRADE_SCORE_THRESHOLD,
     tradeMinSmartMoney: TRADE_MIN_SMART_MONEY,
     tradeMaxSignalCount: TRADE_MAX_SIGNAL_COUNT,
+    tradeHeadEntrySignalCount: TRADE_HEAD_ENTRY_SIGNAL_COUNT,
     tradeMinLiquidity: TRADE_MIN_LIQUIDITY,
     tradeMinVolume: TRADE_MIN_VOLUME,
     tradeMinBuySellRatio: TRADE_MIN_BUY_SELL_RATIO,
@@ -3777,6 +4259,8 @@ export function getRadarConfig(db = null) {
     tradeHotModeMinLiquidity: TRADE_HOT_MODE_MIN_LIQUIDITY,
     tradeHotModeMinBuySellRatio: TRADE_HOT_MODE_MIN_BUY_SELL_RATIO,
     tradeHotModeMinScore: TRADE_HOT_MODE_MIN_SCORE,
+    tradeSecondHeadMinScore: TRADE_SECOND_HEAD_MIN_SCORE,
+    tradeSecondHeadMinScoreDelta: TRADE_SECOND_HEAD_MIN_SCORE_DELTA,
     paperTakeProfitPercent:
       paperTradeSettings.takeProfitSteps[0]?.targetPercent || LEGACY_PAPER_TAKE_PROFIT_PERCENT,
     paperTakeProfitSteps: paperTradeSettings.takeProfitSteps,
@@ -3790,6 +4274,8 @@ export function getRadarConfig(db = null) {
     paperTotalCapitalUsd: PAPER_TOTAL_CAPITAL_USD,
     paperMaxOpenPositions: PAPER_MAX_OPEN_POSITIONS,
     paperMaxCapitalUsagePct: PAPER_MAX_CAPITAL_USAGE_PCT,
+    paperMaxSinglePositionPct: PAPER_MAX_SINGLE_POSITION_PCT,
+    paperEntryStageAllocations: PAPER_ENTRY_STAGE_ALLOCATIONS,
   };
 }
 
@@ -4160,7 +4646,9 @@ export async function scanNarratives(options = {}) {
     checkNarrativeNovelty(db, theme, token.name, token.address, token.chain, runtimeState);
   }
 
-  const currentAlerts = momentumAlerts.slice(0, MAX_ALERTS_PER_ROUND);
+  const currentAlerts = [...momentumAlerts]
+    .sort(compareSignalPriority)
+    .slice(0, MAX_ALERTS_PER_ROUND);
   let persistedThisRound = 0;
   let persistedAlerts = [];
   let totalPersisted = 0;
@@ -4169,6 +4657,7 @@ export async function scanNarratives(options = {}) {
   let paperSummary;
   let paperPositions;
   let closedPaperPositions;
+  let latestSignal = currentAlerts[0] || null;
   let signalTimeline = [];
   let config;
   let strategyRuntimeInfo;
@@ -4177,12 +4666,14 @@ export async function scanNarratives(options = {}) {
     const startedAt = previousSnapshot?.strategyStartedAt || scannedAt;
     strategyRuntimeInfo = getStrategyRuntimeInfoFromStartedAt(startedAt);
     const runtimePaperPositions = normalizeRuntimePaperPositions(runtimeState?.paperPositions);
+    const historyScoreMap = buildHistoryScoreMapFromAlerts(previousSnapshot?.alerts);
     const nextPaperPositions = processTradePlansInMemory(
       runtimePaperPositions,
       currentAlerts,
       tokens,
       scannedAtTs,
-      remotePaperTradeSettings
+      remotePaperTradeSettings,
+      historyScoreMap
     );
     paperSummary = getPaperAccountSummaryFromPositions(nextPaperPositions);
     paperPositions = nextPaperPositions
@@ -4202,6 +4693,7 @@ export async function scanNarratives(options = {}) {
       )
       .slice(0, 30);
     persistedThisRound = currentAlerts.length;
+    latestSignal = currentAlerts[0] || null;
     config = {
       ...getRadarConfig(),
       paperTakeProfitPercent:
@@ -4216,7 +4708,9 @@ export async function scanNarratives(options = {}) {
     setRadarMeta(db, 'last_scanned_at_ts', scannedAtTs);
     processTradePlans(db, currentAlerts, tokens, scannedAtTs);
     persistedThisRound = persistAlerts(db, currentAlerts, scannedAtTs);
-    persistedAlerts = getRecentPersistedAlerts(db, rowLimit);
+    const persistedResult = getRecentPersistedAlerts(db, rowLimit);
+    persistedAlerts = persistedResult.alerts;
+    latestSignal = persistedResult.latestSignal || currentAlerts[0] || null;
     totalPersisted = db.prepare('SELECT COUNT(*) AS count FROM pushed_alerts').get().count || 0;
     totalPersistedTokens =
       db.prepare("SELECT COUNT(DISTINCT chain || ':' || address) AS count FROM pushed_alerts").get()
@@ -4248,6 +4742,26 @@ export async function scanNarratives(options = {}) {
     persistedThisRound,
     totalPersisted,
     totalPersistedTokens,
+    latestSignal: latestSignal
+      ? {
+          chain: latestSignal.chain,
+          address: latestSignal.address,
+          signalCount: latestSignal.signalCount || 1,
+          name: latestSignal.name,
+          symbol: latestSignal.symbol,
+          imageUrl: latestSignal.imageUrl || '',
+          price: latestSignal.price || 0,
+          pushedAt: latestSignal.pushedAt || scannedAt,
+          pctGain: latestSignal.pctGain || 0,
+          smartMoney: latestSignal.smartMoney || 0,
+          tradeScore: latestSignal.tradeScore ?? null,
+          narrativeTag: latestSignal.narrativeTag || '',
+          category: latestSignal.category || '',
+          twitter: latestSignal.twitter || '',
+          telegram: latestSignal.telegram || '',
+          website: latestSignal.website || '',
+        }
+      : null,
     paperSummary,
     paperPositions,
     closedPaperPositions,
@@ -4258,6 +4772,7 @@ export async function scanNarratives(options = {}) {
       scanning: dashboardRows.filter((row) => row.status === 'scanning').length,
     },
     alerts: persistedAlerts,
+    latestSignal,
     signalTimeline,
     rows: dashboardRows,
     config,
@@ -4293,6 +4808,7 @@ export async function scanNarratives(options = {}) {
     ]);
 
     result.alerts = syncedAlerts;
+    result.latestSignal = syncedAlerts[0] || result.latestSignal;
     result.signalTimeline = syncedTimeline;
     result.paperSummary = syncedPaperSummary || result.paperSummary;
     result.paperPositions = syncedOpenPositions;

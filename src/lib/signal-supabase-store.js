@@ -498,6 +498,7 @@ export async function getSupabasePersistedSnapshot(limit = 60) {
       scanning: 0,
     },
     alerts,
+    latestSignal: snapshot.latestSignal || alerts[0] || null,
     ...runtimeInfo,
     paperSummary: paperSummary || snapshot.paperSummary,
     paperPositions: attachSocialLinksToPositions(paperPositions, alerts),

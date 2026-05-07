@@ -12,8 +12,9 @@ function buildPaperTradeSettings(config = {}) {
   const fallbackTakeProfitSteps = Array.isArray(config?.paperTakeProfitSteps)
     ? config.paperTakeProfitSteps
     : [
-        { targetPercent: 40, sellPercent: 50 },
-        { targetPercent: 100, sellPercent: 30 },
+        { targetPercent: 80, sellPercent: 55 },
+        { targetPercent: 150, sellPercent: 25 },
+        { targetPercent: 260, sellPercent: 20 },
       ];
 
   const settings = config?.paperTradeSettings || {};
@@ -23,10 +24,10 @@ function buildPaperTradeSettings(config = {}) {
       : fallbackTakeProfitSteps;
 
   return {
-    stopLossPercent: Number(settings.stopLossPercent ?? config.paperStopLossPercent ?? 40),
-    trailingStartPercent: Number(settings.trailingStartPercent ?? config.paperTrailingStartPercent ?? 70),
-    trailingStopPercent: Number(settings.trailingStopPercent ?? config.paperTrailingStopPercent ?? 20),
-    timeStopHours: Number(settings.timeStopHours ?? config.paperTimeStopHours ?? 12),
+    stopLossPercent: Number(settings.stopLossPercent ?? config.paperStopLossPercent ?? 50),
+    trailingStartPercent: Number(settings.trailingStartPercent ?? config.paperTrailingStartPercent ?? 180),
+    trailingStopPercent: Number(settings.trailingStopPercent ?? config.paperTrailingStopPercent ?? 35),
+    timeStopHours: Number(settings.timeStopHours ?? config.paperTimeStopHours ?? 8),
     takeProfitSteps,
   };
 }
@@ -256,7 +257,10 @@ export default function VaultPage() {
         <div className="panel-header compact-header">
           <div>
             <h2>当前策略</h2>
-            <p className="panel-subtitle">当前只保留核心规则摘要，方便快速查看持仓逻辑。</p>
+            <p className="panel-subtitle">
+              第 1 次信号满足评分和质量门槛时直接买入目标仓位 100%；第 2 次信号只有在评分明显强于上次时才允许补开头仓；
+              一旦已有持仓，后续信号只做观察与风控，不再追加买入。
+            </p>
           </div>
         </div>
         <div className="strategy-pill-row">

@@ -4,13 +4,13 @@ import { useEffect, useMemo, useState } from 'react';
 import AppFooter from './components/AppFooter';
 import AppHeader from './components/AppHeader';
 import LoadingBlock from './components/LoadingBlock';
-import TokenSignalTimeline from './components/TokenSignalTimeline';
+import TokenSignalTimeline, { ScoreWithTooltip } from './components/TokenSignalTimeline';
 import VirtualListTable from './components/VirtualListTable';
-import { AddressCopy, ExternalLinks } from './components/token-ui';
+import { AddressCopy, ExternalLinks, TokenAvatar } from './components/token-ui';
 
 const POLL_SECONDS = 30;
-const ALERT_ROW_HEIGHT = 196;
-const ALERT_LIST_HEIGHT = 620;
+const ALERT_ROW_HEIGHT = 214;
+const ALERT_LIST_HEIGHT = 600;
 
 function formatMoney(value) {
   if (value == null) {
@@ -48,6 +48,21 @@ function formatPrice(value) {
   return `$${number.toFixed(8)}`;
 }
 
+function formatLiquidity(value) {
+  if (value == null || Number.isNaN(Number(value))) {
+    return '--';
+  }
+
+  const number = Number(value);
+  if (number >= 1000000) {
+    return `$${(number / 1000000).toFixed(2)}M`;
+  }
+  if (number >= 1000) {
+    return `$${(number / 1000).toFixed(1)}k`;
+  }
+  return `$${number.toFixed(0)}`;
+}
+
 function formatUsd(value) {
   if (value == null || Number.isNaN(Number(value))) {
     return '--';
@@ -71,12 +86,28 @@ function formatTime(value) {
   }
 
   return new Date(value).toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
     hour12: false,
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
+  });
+}
+
+function formatCompactTime(value) {
+  if (!value) {
+    return '--';
+  }
+
+  return new Date(value).toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    hour12: false,
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
   });
 }
 
@@ -112,10 +143,280 @@ function formatDecisionLabel(value) {
   }
 }
 
+function formatTradeActionLabel(alert) {
+  const reason = String(alert?.tradeDecisionReason || '');
+  if (reason.includes('不再分批加仓') || reason.includes('头仓已一次性买满')) {
+    return '持仓观察';
+  }
+  if (reason.includes('第2次信号评分走强')) {
+    return '补开头仓';
+  }
+  if (reason.includes('头仓条件')) {
+    return '头仓';
+  }
+  if (reason.includes('头仓仅允许第 1-2 次')) {
+    return '错过头仓窗口';
+  }
+  return alert?.tradeDecisionStatus === 'approved' ? '可执行' : '观察中';
+}
+
+function formatTradeReasonHint(alert) {
+  const reason = String(alert?.tradeDecisionReason || '');
+  if (!reason) {
+    return '';
+  }
+  if (reason.includes('高热模式')) {
+    return '高热限制';
+  }
+  if (reason.includes('买卖比')) {
+    return '买卖比不足';
+  }
+  if (reason.includes('流动性')) {
+    return '流动性不足';
+  }
+  if (reason.includes('成交量')) {
+    return '成交量不足';
+  }
+  if (reason.includes('评分')) {
+    return '评分不足';
+  }
+  if (reason.includes('头仓仅允许')) {
+    return '错过头仓';
+  }
+  if (reason.includes('不再分批加仓') || reason.includes('头仓已一次性买满')) {
+    return '已满目标仓';
+  }
+  return '';
+}
+
+function formatEntryProgress(positionSizeUsd, targetPositionSizeUsd, entryStage) {
+  const current = Number(positionSizeUsd || 0);
+  const target = Number(targetPositionSizeUsd || 0);
+  const stage = Number(entryStage || 0);
+  if (target <= 0) {
+    return '--';
+  }
+
+  const progress = Math.max(0, Math.min(100, (current / target) * 100));
+  return `建仓 ${Math.min(stage || 0, 1)}/1 · ${progress.toFixed(0)}%`;
+}
+
 function formatTakeProfitSteps(steps = []) {
   return (steps || [])
     .map((step) => `+${step.targetPercent}%/${step.sellPercent}%`)
     .join(' · ');
+}
+
+function getTelegramTradeScore(alert) {
+  const signalCount = Number(alert?.occurrenceCount || alert?.signalCount || 1);
+  const smartMoney = Number(alert?.smartMoney || 0);
+  const pctGain = Number(alert?.pctGain || 0);
+  const liquidity = Number(alert?.liq || 0);
+  const volume = Number(alert?.volume || 0);
+  const buySellRatio = Number(alert?.buySellRatio || 0);
+  const ageHours = Number(alert?.ageHours || 0);
+  const oneHourChange = Number(alert?.change1h || 0);
+
+  let score = 0;
+
+  if (smartMoney >= 15) {
+    score += 30;
+  } else if (smartMoney >= 8) {
+    score += 22;
+  } else if (smartMoney >= 5) {
+    score += 14;
+  } else if (smartMoney >= 3) {
+    score += 8;
+  } else if (smartMoney >= 2) {
+    score += 4;
+  }
+
+  if (signalCount <= 1) {
+    score += 10;
+  } else if (signalCount === 2) {
+    score += 6;
+  } else if (signalCount === 3) {
+    score += 2;
+  } else {
+    score -= 6;
+  }
+
+  if (pctGain >= 15) {
+    score += 15;
+  } else if (pctGain >= 10) {
+    score += 12;
+  } else if (pctGain >= 8) {
+    score += 8;
+  } else if (pctGain >= 5) {
+    score += 5;
+  }
+
+  if (liquidity >= 100000) {
+    score += 16;
+  } else if (liquidity >= 50000) {
+    score += 12;
+  } else if (liquidity >= 20000) {
+    score += 10;
+  } else if (liquidity >= 10000) {
+    score += 6;
+  } else if (liquidity >= 5000) {
+    score += 2;
+  }
+
+  if (volume >= 500000) {
+    score += 16;
+  } else if (volume >= 200000) {
+    score += 12;
+  } else if (volume >= 100000) {
+    score += 10;
+  } else if (volume >= 50000) {
+    score += 7;
+  } else if (volume >= 30000) {
+    score += 4;
+  }
+
+  if (buySellRatio >= 2) {
+    score += 12;
+  } else if (buySellRatio >= 1.8) {
+    score += 9;
+  } else if (buySellRatio >= 1.6) {
+    score += 6;
+  } else if (buySellRatio >= 1.4) {
+    score += 3;
+  } else if (buySellRatio < 1.2) {
+    score -= 6;
+  } else if (buySellRatio < 1.4) {
+    score -= 2;
+  }
+
+  if (ageHours <= 6) {
+    score += 5;
+  } else if (ageHours <= 12) {
+    score += 4;
+  } else if (ageHours <= 24) {
+    score += 3;
+  } else if (ageHours <= 48) {
+    score += 1;
+  }
+
+  if (oneHourChange >= 80) {
+    score -= 18;
+  } else if (oneHourChange >= 50) {
+    score -= 10;
+  } else if (oneHourChange >= 30) {
+    score -= 4;
+  }
+
+  const finalScore = Math.max(0, Math.round(score));
+  let label = '观察';
+  if (finalScore >= 80) {
+    label = '强势';
+  } else if (finalScore >= 65) {
+    label = '偏强';
+  } else if (finalScore >= 50) {
+    label = '中性';
+  }
+
+  return { score: finalScore, label };
+}
+
+function getPriceActionScore(alert) {
+  const rounds = Number(alert?.occurrenceCount || alert?.signalCount || 1);
+  const pctGain = Number(alert?.pctGain || 0);
+  const smartMoney = Number(alert?.smartMoney || 0);
+  const volume = Number(alert?.volume || 0);
+  const liquidity = Number(alert?.liq || 0);
+  const oneHourChange = Number(alert?.change1h || 0);
+  const buySellRatio = Number(alert?.buySellRatio || 0);
+  const volUp = Boolean(alert?.volUp || alert?.volumeUp || alert?.volumeRising);
+
+  let score = 0;
+
+  if (rounds >= 3) {
+    score += 20;
+  } else if (rounds >= 2) {
+    score += 10;
+  }
+
+  if (pctGain >= 30) {
+    score += 25;
+  } else if (pctGain >= 15) {
+    score += 18;
+  } else if (pctGain >= 8) {
+    score += 12;
+  } else if (pctGain >= 5) {
+    score += 8;
+  }
+
+  if (volUp) {
+    score += 10;
+  }
+
+  if (smartMoney >= 5) {
+    score += 15;
+  } else if (smartMoney >= 3) {
+    score += 10;
+  } else if (smartMoney >= 2) {
+    score += 6;
+  }
+
+  if (buySellRatio >= 1.5) {
+    score += 12;
+  } else if (buySellRatio >= 1.2) {
+    score += 8;
+  } else if (buySellRatio >= 1.1) {
+    score += 5;
+  }
+
+  if (volume >= 100000) {
+    score += 10;
+  } else if (volume >= 30000) {
+    score += 6;
+  }
+
+  if (liquidity >= 20000) {
+    score += 8;
+  } else if (liquidity >= 10000) {
+    score += 5;
+  }
+
+  if (oneHourChange >= 80) {
+    score -= 15;
+  } else if (oneHourChange >= 50) {
+    score -= 8;
+  }
+
+  const finalScore = Math.max(0, Math.min(100, Math.round(score)));
+  let label = '观察';
+  if (finalScore >= 80) label = '强势';
+  else if (finalScore >= 65) label = '偏强';
+  else if (finalScore >= 50) label = '中性';
+
+  return { score: finalScore, label };
+}
+
+function getTradeEvalIcons(alert) {
+  const items = [];
+  const reasonHint = formatTradeReasonHint(alert);
+  if (reasonHint) {
+    items.push({ icon: '!', label: '原因', text: reasonHint });
+  }
+  items.push({
+    icon: 'TP',
+    label: '止盈',
+    text: `TP ${formatTakeProfitSteps(alert.paperTakeProfitSteps || [{ targetPercent: 40, sellPercent: 50 }])}`,
+  });
+  items.push({
+    icon: 'SL',
+    label: '止损',
+    text: `SL -${alert.paperStopLossPct ?? 50}%`,
+  });
+  return items;
+}
+
+function getTradeScoreValue(alert) {
+  const value = Number(alert?.tradeScore);
+  return Number.isFinite(value) ? value : '--';
 }
 
 function AlertRow({ alert, copiedKey, onCopy, streamConnected }) {
@@ -123,60 +424,91 @@ function AlertRow({ alert, copiedKey, onCopy, streamConnected }) {
 
   return (
     <>
-      <div className="virtual-cell">
-        <div className="token-main">
-          <div className="token-title-row">
-            <strong>{alert.name}</strong>
-            <span className={`live-badge compact-live token-live-badge ${streamConnected ? 'connected' : 'disconnected'}`}>
-              <span className="live-dot" />
-              {streamConnected ? '实时' : '连接中'}
-            </span>
+      <div className="virtual-cell token-cell">
+        <div className="token-main token-main-compact">
+          <div className="token-title-row position-token-topline token-title-row-compact">
+            <TokenAvatar name={alert.name} symbol={alert.symbol} imageUrl={alert.imageUrl} />
+            <div className="token-label-stack">
+              <div className="token-title-inline">
+                <strong className="token-symbol-primary">{alert.symbol}</strong>
+                <span className={`live-badge compact-live token-live-badge ${streamConnected ? 'connected' : 'disconnected'}`}>
+                  <span className="live-dot" />
+                  {streamConnected ? '实时' : '连接中'}
+                </span>
+                <ExternalLinks
+                  address={alert.address}
+                  twitter={alert.twitter}
+                  xOnly
+                />
+              </div>
+              <span className="token-name-secondary">{alert.name}</span>
+            </div>
           </div>
-          <p>{alert.symbol} · {alert.ageHours}h</p>
-          <AddressCopy
-            address={alert.address}
-            copyId={copyId}
-            copiedKey={copiedKey}
-            onCopy={onCopy}
-          />
-          <p className="token-subtle">现价 {formatPrice(alert.price)}</p>
+          <div className="token-info-row token-info-row-compact">
+            <span className="position-score-chip">现价 {formatPrice(alert.price)}</span>
+            <div className="token-address-row">
+              <AddressCopy
+                address={alert.address}
+                copyId={copyId}
+                copiedKey={copiedKey}
+                onCopy={onCopy}
+              />
+            </div>
+          </div>
         </div>
       </div>
-      <div className="virtual-cell timeline-cell">
-        <strong>累计 {alert.occurrenceCount || alert.signalCount} 次</strong>
-        <p>最近: {formatTime(alert.latestPushedAt || alert.pushedAt)}</p>
+      <div className="virtual-cell timeline-cell compact-timeline-cell">
+        <div className="timeline-summary-row compact-summary-row">
+          <strong>{alert.occurrenceCount || alert.signalCount} 次</strong>
+          <span className="timeline-mini-time">{formatCompactTime(alert.latestPushedAt || alert.pushedAt)}</span>
+        </div>
         <TokenSignalTimeline history={alert.signalHistory || []} compact />
       </div>
-      <div className="virtual-cell">
-        <span className="status status-triggered">已触发</span>
-        <p className={alert.pctGain >= 0 ? 'positive' : 'negative'}>{formatPercent(alert.pctGain)}</p>
-        <p>{formatPercent(alert.change1h || 0)} / 1h</p>
+      <div className="virtual-cell momentum-cell compact-metric-cell">
+        <div className="metric-stack compact-metric-stack">
+          <strong className={alert.pctGain >= 0 ? 'positive' : 'negative'}>{formatPercent(alert.pctGain)}</strong>
+          <span className="metric-inline">1h {formatPercent(alert.change1h || 0)}</span>
+        </div>
       </div>
-      <div className="virtual-cell">
-        <strong>{alert.tradeScore ?? '--'} 分</strong>
-        <p>{formatDecisionLabel(alert.tradeDecisionStatus)}</p>
-        <div className="trade-tags">
+      <div className="virtual-cell trade-cell compact-trade-cell">
+        <div className="trade-score-compact">
+          <span className="score-inline-pill trade-score-line">交易评分：{getTelegramTradeScore(alert).score}</span>
+          <span className="score-inline-pill muted trade-score-line">价格评分：{getPriceActionScore(alert).score}</span>
+        </div>
+        <div className="trade-tags compact-tags">
+          {alert.paperTargetPositionSizeUsd != null ? (
+            <span className="history-chip">
+              {formatEntryProgress(
+                alert.paperPositionSizeUsd,
+                alert.paperTargetPositionSizeUsd,
+                alert.paperEntryStage
+              )}
+            </span>
+          ) : null}
           {alert.paperPnLPct != null ? (
             <span className="history-chip">PnL {formatPercent(alert.paperPnLPct)}</span>
           ) : null}
-          <span className="history-chip">
-            TP {formatTakeProfitSteps(alert.paperTakeProfitSteps || [{ targetPercent: 40, sellPercent: 50 }])}
-          </span>
-          <span className="history-chip">SL -{alert.paperStopLossPct ?? 50}%</span>
         </div>
       </div>
-      <div className="virtual-cell">
-        <strong>聪明钱 {alert.smartMoney}</strong>
-        <p>流动性 ${formatMoney(alert.liq)}</p>
-        <p>1h量 ${formatMoney(alert.volume)} / 比值 {alert.buySellRatio}</p>
-      </div>
-      <div className="virtual-cell">
-        <ExternalLinks
-          address={alert.address}
-          twitter={alert.twitter}
-          website={alert.website}
-          telegram={alert.telegram}
-        />
+      <div className="virtual-cell market-cell compact-market-cell">
+        <div className="market-grid">
+          <div className="market-pill">
+            <span>聪明钱</span>
+            <strong>{alert.smartMoney}</strong>
+          </div>
+          <div className="market-pill">
+            <span>流动性</span>
+            <strong>{formatLiquidity(alert.liq)}</strong>
+          </div>
+          <div className="market-pill">
+            <span>1h量</span>
+            <strong>{formatLiquidity(alert.volume)}</strong>
+          </div>
+          <div className="market-pill">
+            <span>比值</span>
+            <strong>{alert.buySellRatio}</strong>
+          </div>
+        </div>
       </div>
     </>
   );
@@ -194,9 +526,8 @@ function VirtualAlertList({ alerts, copiedKey, onCopy, streamConnected }) {
         { key: 'momentum', label: '动量' },
         { key: 'trade', label: '交易' },
         { key: 'market', label: '市场' },
-        { key: 'links', label: '链接' },
       ]}
-      headerClassName="alert-grid"
+      headerClassName="alert-grid alert-grid-centered"
       rowClassName="alert-grid"
       minTableWidth={980}
       getItemKey={(alert) => `${alert.address}-${alert.signalCount}-${alert.latestPushedAt || alert.pushedAt}`}

@@ -4,15 +4,16 @@ import { useEffect, useMemo, useState } from 'react';
 
 function normalizeSettings(settings) {
   const fallbackSteps = [
-    { targetPercent: 40, sellPercent: 50 },
-    { targetPercent: 100, sellPercent: 30 },
+    { targetPercent: 80, sellPercent: 55 },
+    { targetPercent: 150, sellPercent: 25 },
+    { targetPercent: 260, sellPercent: 20 },
   ];
   const steps = Array.isArray(settings?.takeProfitSteps) ? settings.takeProfitSteps : [];
   return {
-    stopLossPercent: Number(settings?.stopLossPercent ?? 40),
-    trailingStartPercent: Number(settings?.trailingStartPercent ?? 70),
-    trailingStopPercent: Number(settings?.trailingStopPercent ?? 20),
-    timeStopHours: Number(settings?.timeStopHours ?? 12),
+    stopLossPercent: Number(settings?.stopLossPercent ?? 50),
+    trailingStartPercent: Number(settings?.trailingStartPercent ?? 180),
+    trailingStopPercent: Number(settings?.trailingStopPercent ?? 35),
+    timeStopHours: Number(settings?.timeStopHours ?? 8),
     takeProfitSteps: steps.length > 0 ? steps : fallbackSteps,
   };
 }

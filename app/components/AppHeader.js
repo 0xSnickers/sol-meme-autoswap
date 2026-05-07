@@ -6,7 +6,6 @@ import Link from 'next/link';
 const NAV_ITEMS = [
   { key: 'pulse', href: '/', label: '最新信号' },
   { key: 'vault', href: '/vault', label: '持仓信息' },
-  { key: 'intel', href: '/signals', label: '信号统计' },
 ];
 
 function MiniStatusCard({ label, value, tone = 'neutral' }) {

@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+
 export function formatAddress(value) {
   if (!value) {
     return '--';
@@ -33,20 +35,47 @@ export function LinkIcon({ kind }) {
   }
 }
 
+export function TokenAvatar({ name, symbol, imageUrl, size = 'md' }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const hasImage = Boolean(imageUrl) && !imageFailed;
+  const fallbackText = String(symbol || name || '?').slice(0, 1).toUpperCase();
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [imageUrl]);
+
+  return (
+    <span className={`token-avatar token-avatar-${size}`}>
+      {hasImage ? (
+        <img
+          src={imageUrl}
+          alt={name ? `${name} logo` : 'token logo'}
+          className="token-avatar-image"
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setImageFailed(true)}
+        />
+      ) : (
+        <span className="token-avatar-fallback">{fallbackText}</span>
+      )}
+    </span>
+  );
+}
+
 export function AddressCopy({ address, copyId, copiedKey, onCopy }) {
   return (
     <div className="ca-row">
       <span className="ca-text">{formatAddress(address)}</span>
-      <button type="button" className="copy-btn" onClick={() => onCopy(address, copyId)}>
-        {copiedKey === copyId ? '已复制' : '复制'}
+      <button type="button" className="copy-btn copy-btn-mini" onClick={() => onCopy(address, copyId)} aria-label="复制 CA">
+        {copiedKey === copyId ? '✓' : '⧉'}
       </button>
     </div>
   );
 }
 
-export function ExternalLinks({ address, twitter }) {
+export function ExternalLinks({ address, twitter, className = '' }) {
   return (
-    <div className="icon-links">
+    <div className={`icon-links ${className}`.trim()}>
       {twitter ? (
         <a
           href={twitter}
