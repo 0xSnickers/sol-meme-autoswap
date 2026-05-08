@@ -36,6 +36,21 @@ function formatAxisTime(value) {
   });
 }
 
+function formatTimeAxisLabel(value, compact = false) {
+  if (!value) {
+    return '--';
+  }
+
+  const date = new Date(value);
+  return date.toLocaleTimeString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    ...(compact ? {} : { second: '2-digit' }),
+  });
+}
+
 function formatScore(value) {
   if (value == null || Number.isNaN(Number(value))) {
     return '--';
@@ -67,6 +82,7 @@ export default function TokenSignalTimeline({ history = [], compact = false }) {
         .map((item, index) => ({
           ...item,
           signalCount: Number(item.signalCount) || index + 1,
+          timestamp: new Date(item.pushedAt).getTime(),
           axisLabel: formatAxisTime(item.pushedAt),
           fullLabel: formatFullTime(item.pushedAt),
         })),
@@ -84,6 +100,8 @@ export default function TokenSignalTimeline({ history = [], compact = false }) {
     const minScore = scoreValues.length ? Math.min(...scoreValues) : 0;
     const maxScore = scoreValues.length ? Math.max(...scoreValues) : 100;
     const scoreRange = Math.max(1, maxScore - minScore);
+    const densePoints = points.length >= 10;
+    const showPointSymbols = points.length <= (compact ? 10 : 14);
     const interval = compact ? (scoreRange <= 20 ? 20 : 25) : scoreRange <= 30 ? 15 : 20;
     const axisMin = Math.max(0, Math.floor(minScore / interval) * interval - interval);
     const axisMax = Math.min(100, Math.ceil(maxScore / interval) * interval + interval);
@@ -100,6 +118,14 @@ export default function TokenSignalTimeline({ history = [], compact = false }) {
       },
       tooltip: {
         trigger: 'axis',
+        axisPointer: {
+          type: 'line',
+          snap: true,
+          lineStyle: {
+            color: 'rgba(255, 255, 255, 0.18)',
+            width: 1,
+          },
+        },
         appendToBody: true,
         confine: false,
         backgroundColor: 'rgba(10, 12, 16, 0.96)',
@@ -133,18 +159,23 @@ export default function TokenSignalTimeline({ history = [], compact = false }) {
         },
       },
       xAxis: {
-        type: 'category',
+        type: 'time',
         boundaryGap: false,
-        data: points.map((item) => item.axisLabel),
         axisLine: {
           lineStyle: { color: 'rgba(255, 255, 255, 0.12)' },
         },
         axisTick: { show: false },
+        splitNumber: compact ? 3 : 5,
         axisLabel: {
           color: 'rgba(255, 255, 255, 0.56)',
           fontSize: compact ? 10 : 11,
-          interval: 'auto',
           hideOverlap: true,
+          formatter(value) {
+            return formatTimeAxisLabel(value, compact);
+          },
+        },
+        splitLine: {
+          show: false,
         },
       },
       yAxis: {
@@ -171,13 +202,15 @@ export default function TokenSignalTimeline({ history = [], compact = false }) {
         {
           name: '交易评分',
           type: 'line',
-          smooth: true,
+          smooth: densePoints ? false : 0.22,
+          smoothMonotone: 'x',
           symbol: 'circle',
-          symbolSize: compact ? 7 : 8,
-          showSymbol: true,
+          symbolSize: showPointSymbols ? (compact ? 5 : 6) : 4,
+          showSymbol: showPointSymbols,
           connectNulls: false,
+          clip: true,
           lineStyle: {
-            width: 2.6,
+            width: densePoints ? 2.2 : 2.6,
             color: '#8df847',
           },
           itemStyle: {
@@ -244,22 +277,27 @@ export default function TokenSignalTimeline({ history = [], compact = false }) {
           },
           label: { show: false },
           data: points.map((item) => ({
-            value: item.tradeScore == null || Number.isNaN(Number(item.tradeScore)) ? null : Number(item.tradeScore),
+            value:
+              item.tradeScore == null || Number.isNaN(Number(item.tradeScore))
+                ? [item.timestamp, null]
+                : [item.timestamp, Number(item.tradeScore)],
             ...item,
           })),
         },
         {
           name: '价格评分',
           type: 'line',
-          smooth: true,
+          smooth: densePoints ? false : 0.18,
+          smoothMonotone: 'x',
           symbol: 'diamond',
-          symbolSize: compact ? 7 : 8,
-          showSymbol: true,
+          symbolSize: showPointSymbols ? (compact ? 5 : 6) : 4,
+          showSymbol: showPointSymbols,
           connectNulls: false,
+          clip: true,
           lineStyle: {
-            width: 2,
+            width: densePoints ? 1.8 : 2,
             color: '#5eead4',
-            type: 'dashed',
+            opacity: densePoints ? 0.75 : 0.88,
           },
           itemStyle: {
             color: '#5eead4',
@@ -267,7 +305,7 @@ export default function TokenSignalTimeline({ history = [], compact = false }) {
             borderWidth: 1.5,
           },
           areaStyle: {
-            color: 'rgba(94, 234, 212, 0.05)',
+            color: 'rgba(94, 234, 212, 0.035)',
           },
           emphasis: {
             focus: 'series',
@@ -286,7 +324,10 @@ export default function TokenSignalTimeline({ history = [], compact = false }) {
               },
           label: { show: false },
           data: points.map((item) => ({
-            value: item.priceScore == null || Number.isNaN(Number(item.priceScore)) ? null : Number(item.priceScore),
+            value:
+              item.priceScore == null || Number.isNaN(Number(item.priceScore))
+                ? [item.timestamp, null]
+                : [item.timestamp, Number(item.priceScore)],
             ...item,
           })),
         },

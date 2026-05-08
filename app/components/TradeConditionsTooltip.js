@@ -99,6 +99,17 @@ function formatDecisionStatus(status) {
   }
 }
 
+function formatPositionStatus(status) {
+  switch (status) {
+    case 'open':
+      return '持仓中';
+    case 'closed':
+      return '已平仓';
+    default:
+      return '未开仓';
+  }
+}
+
 function formatMetricNumber(value, digits = 1) {
   if (!Number.isFinite(Number(value))) {
     return '--';
@@ -153,14 +164,14 @@ function buildTradeConditionSections(signal, snapshotConfig) {
   const previousScore = getPreviousSignalScore(signal);
   const scoreDelta =
     tradeScore != null && previousScore != null ? Number(tradeScore - previousScore) : null;
-  const hasOpenPosition = signal?.paperPositionStatus === 'open';
+  const paperPositionStatus = signal?.paperPositionStatus;
+  const hasOpenPosition = paperPositionStatus === 'open';
   const isSecondSignal = signalCount === config.tradeSecondHeadEntrySignalCount;
   const exceedsHeadWindow =
     signalCount != null && signalCount > config.tradeSecondHeadEntrySignalCount;
   const isHotMode = change1h != null && change1h >= config.tradeHotModeChange1h;
 
   const baseItems = [
-    createCondition(!hasOpenPosition, '当前无打开持仓', hasOpenPosition ? '当前策略不再对该 Token 加仓' : ''),
     createCondition(
       tradeScore != null && tradeScore >= config.tradeScoreThreshold,
       `交易评分 >= ${config.tradeScoreThreshold}`,
@@ -263,13 +274,17 @@ function buildTradeConditionSections(signal, snapshotConfig) {
   const allItems = [baseItems, ...extraSections.map((section) => section.items)].flat();
   const passedCount = allItems.filter((item) => item.passed).length;
   const totalCount = allItems.length;
+  const positionStatusLabel = formatPositionStatus(paperPositionStatus);
+  const positionStatusHint = hasOpenPosition ? '当前策略不再对该 Token 加仓' : '';
 
   return {
-    summaryLabel: passedCount === totalCount ? '满足开仓条件' : '未满足开仓条件',
-    summaryTone: passedCount === totalCount ? 'approved' : 'rejected',
+    summaryLabel: hasOpenPosition ? '持仓中（不再加仓）' : passedCount === totalCount ? '满足开仓条件' : '未满足开仓条件',
+    summaryTone: hasOpenPosition ? 'skipped' : passedCount === totalCount ? 'approved' : 'rejected',
     passedCount,
     totalCount,
     decisionStatusLabel: formatDecisionStatus(signal?.tradeDecisionStatus),
+    positionStatusLabel,
+    positionStatusHint,
     sections: [
       {
         title: '基础条件',
@@ -459,6 +474,7 @@ function TradeConditionsTooltipBody({ signal, snapshotConfig }) {
       <div className="trade-tooltip-meta">
         <span>Token 条件命中 {meta.passedCount}/{meta.totalCount}</span>
         <span>系统判定: {meta.decisionStatusLabel}</span>
+        <span>持仓状态: {meta.positionStatusLabel}{meta.positionStatusHint ? `（${meta.positionStatusHint}）` : ''}</span>
       </div>
 
       {meta.sections.map((section, sectionIndex) => (

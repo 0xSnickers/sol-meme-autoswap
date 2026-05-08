@@ -104,10 +104,25 @@ export default function VaultPage() {
   const closedPaperPositions = data?.closedPaperPositions || [];
   const hasOpenPositions = paperPositions.length > 0;
   const floatingPnlReady = !hasOpenPositions || Boolean(data?.liveUpdatedAt);
+  const balancesReady = floatingPnlReady;
   const currentStrategy = buildPaperTradeSettings(data?.config);
   const takeProfitSummary = currentStrategy.takeProfitSteps
     .map((step, index) => `TP${index + 1} +${step.targetPercent}%/${step.sellPercent}%`)
     .join(' · ');
+  const takeProfitTriggers = currentStrategy.takeProfitSteps
+    .map((step, index) => ({
+      key: `tp-${index}`,
+      label: `当涨幅 ≥ +${step.targetPercent}% → 卖出 ${step.sellPercent}%`,
+    }))
+    .filter((item) => Boolean(item.label));
+  const stopLossTrigger =
+    currentStrategy.stopLossPercent > 0 ? `当回撤 ≤ -${currentStrategy.stopLossPercent}% → 全平` : '未启用';
+  const trailingTrigger =
+    currentStrategy.trailingStartPercent > 0 && currentStrategy.trailingStopPercent > 0
+      ? `当最高涨幅 ≥ +${currentStrategy.trailingStartPercent}% 启动；从高点回撤 ≥ ${currentStrategy.trailingStopPercent}% → 全平`
+      : '未启用';
+  const timeStopTrigger =
+    currentStrategy.timeStopHours > 0 ? `持仓 ≥ ${currentStrategy.timeStopHours}h 且未到 TP1 → 全平` : '未启用';
 
   return (
     <main className="page-shell">
@@ -135,28 +150,35 @@ export default function VaultPage() {
 
       <section className="stats-strip">
         <div className="stat-pill highlight">
-          <span>帐户余额</span>
-          <strong className={(data?.paperSummary?.totalPnLUsd ?? 0) >= 0 ? 'positive' : 'negative nowrap-value'}>
-            {formatUsdValue(data?.paperSummary?.equityUsd ?? 0)}
-          </strong>
+          <div className="stat-label-row">
+            <span>帐户余额</span>
+            {!balancesReady ? <span className="stat-spinner" aria-label="loading" /> : null}
+          </div>
+          <div className="stat-value-row">
+            <strong className={(data?.paperSummary?.totalPnLUsd ?? 0) >= 0 ? 'positive' : 'negative nowrap-value'}>
+              {balancesReady ? formatUsdValue(data?.paperSummary?.equityUsd ?? 0) : '$0.00'}
+            </strong>
+          </div>
         </div>
         <div className="stat-pill">
-          <span>可用余额</span>
-          <strong>{formatUsdValue(data?.paperSummary?.availableUsd ?? 0)}</strong>
+          <div className="stat-label-row">
+            <span>可用余额</span>
+            {!balancesReady ? <span className="stat-spinner" aria-label="loading" /> : null}
+          </div>
+          <div className="stat-value-row">
+            <strong>{balancesReady ? formatUsdValue(data?.paperSummary?.availableUsd ?? 0) : '$0.00'}</strong>
+          </div>
         </div>
         <div className="stat-pill">
-          <span>浮动盈亏</span>
-          <strong
-            className={
-              floatingPnlReady
-                ? (data?.paperSummary?.openPnLUsd ?? 0) >= 0
-                  ? 'positive'
-                  : 'negative'
-                : ''
-            }
-          >
-            {floatingPnlReady ? formatUsd(data?.paperSummary?.openPnLUsd ?? 0) : '--'}
-          </strong>
+          <div className="stat-label-row">
+            <span>浮动盈亏</span>
+            {!balancesReady ? <span className="stat-spinner" aria-label="loading" /> : null}
+          </div>
+          <div className="stat-value-row">
+            <strong className={(data?.paperSummary?.openPnLUsd ?? 0) >= 0 ? 'positive' : 'negative'}>
+              {balancesReady ? formatUsd(data?.paperSummary?.openPnLUsd ?? 0) : '$0.00'}
+            </strong>
+          </div>
         </div>
         <div className="stat-pill">
           <span>已实现盈亏</span>
@@ -168,21 +190,53 @@ export default function VaultPage() {
 
       <section className="panel strategy-summary-panel compact-strategy-panel">
         <div className="panel-header compact-header">
-          <div>
-            <h2>当前策略</h2>
+          <div className="strategy-header">
+            <div className="strategy-title-row">
+              <h2>当前策略</h2>
+              <span className="strategy-kicker">纸上交易 · 不加仓</span>
+            </div>
             <p className="panel-subtitle">
-              第 1 次信号满足评分和质量门槛时直接买入目标仓位 100%；第 2 次信号只有在评分明显强于上次时才允许补开头仓；
-              一旦已有持仓，后续信号只做观察与风控，不再追加买入。
+              第 1 次信号满足门槛后直接开头仓；第 2 次信号仅在评分显著增强时允许开仓；一旦持仓中，后续信号只做观察与退出管理。
             </p>
           </div>
         </div>
-        <div className="strategy-pill-row">
-          <span className="strategy-pill">{takeProfitSummary || '止盈规则 --'}</span>
-          <span className="strategy-pill">止损 {currentStrategy.stopLossPercent > 0 ? `-${currentStrategy.stopLossPercent}%` : '--'}</span>
-          <span className="strategy-pill">
-            移动止盈 +{currentStrategy.trailingStartPercent}% / 回撤 {currentStrategy.trailingStopPercent}%
-          </span>
-          <span className="strategy-pill">{currentStrategy.timeStopHours}h 未到 TP1 退出</span>
+        <div className="strategy-rule-grid">
+          <div className="strategy-rule-card">
+            <span className="strategy-rule-label">止盈触发</span>
+            <strong className="strategy-rule-value">{takeProfitSummary || '--'}</strong>
+            <div className="strategy-rule-lines">
+              {takeProfitTriggers.map((item) => (
+                <span key={item.key}>{item.label}</span>
+              ))}
+            </div>
+          </div>
+          <div className="strategy-rule-card">
+            <span className="strategy-rule-label">止损触发</span>
+            <strong className="strategy-rule-value">
+              {currentStrategy.stopLossPercent > 0 ? `-${currentStrategy.stopLossPercent}%` : '--'}
+            </strong>
+            <div className="strategy-rule-lines">
+              <span>{stopLossTrigger}</span>
+            </div>
+          </div>
+          <div className="strategy-rule-card">
+            <span className="strategy-rule-label">Trailing</span>
+            <strong className="strategy-rule-value">
+              +{currentStrategy.trailingStartPercent}% / 回撤 {currentStrategy.trailingStopPercent}%
+            </strong>
+            <div className="strategy-rule-lines">
+              <span>{trailingTrigger}</span>
+            </div>
+          </div>
+          <div className="strategy-rule-card">
+            <span className="strategy-rule-label">时间退出</span>
+            <strong className="strategy-rule-value">
+              {currentStrategy.timeStopHours > 0 ? `${currentStrategy.timeStopHours}h` : '--'}
+            </strong>
+            <div className="strategy-rule-lines">
+              <span>{timeStopTrigger}</span>
+            </div>
+          </div>
         </div>
       </section>
 

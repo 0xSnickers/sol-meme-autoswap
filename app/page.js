@@ -113,8 +113,8 @@ function AlertRow({
             />
           </div>
           <div className="trade-score-compact">
-            <span className="score-inline-pill trade-score-line">交易评分：{tradeScore}</span>
             <span className="score-inline-pill muted trade-score-line">价格评分：{priceScore}</span>
+            <span className="score-inline-pill trade-score-line">交易评分：{tradeScore}</span>
           </div>
         </div>
         <div className="trade-tags compact-tags">
@@ -198,6 +198,7 @@ function SortButton({ label, active, direction, onClick }) {
 
 export default function Page() {
   const [copiedKey, setCopiedKey] = useState('');
+  const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState('latestPushedAt');
   const [sortDirection, setSortDirection] = useState('desc');
   const {
@@ -259,6 +260,24 @@ export default function Page() {
     });
     return rows;
   }, [alerts, sortDirection, sortKey]);
+  const filteredAlerts = useMemo(() => {
+    const keyword = query.trim().toLowerCase();
+    if (!keyword) {
+      return sortedAlerts;
+    }
+
+    return sortedAlerts.filter((alert) => {
+      const haystack = [alert.address, alert.name, alert.symbol]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return haystack.includes(keyword);
+    });
+  }, [query, sortedAlerts]);
+
+  const hasOpenPositions = (data?.paperSummary?.openCount ?? 0) > 0;
+  const balancesReady = !hasOpenPositions || Boolean(data?.liveUpdatedAt);
 
   const miniStatusCards = [
     { label: '网络', value: 'Solana', iconSrc: '/chains/solana.jpg', iconAlt: 'Solana' },
@@ -315,14 +334,24 @@ export default function Page() {
 
       <section className="stats-strip">
         <div className="stat-pill highlight">
-          <span>帐户余额</span>
-          <strong className={(data?.paperSummary?.totalPnLUsd ?? 0) >= 0 ? 'positive' : 'negative nowrap-value'}>
-            {formatUsdValue(data?.paperSummary?.equityUsd ?? 0)}
-          </strong>
+          <div className="stat-label-row">
+            <span>帐户余额</span>
+            {!balancesReady ? <span className="stat-spinner" aria-label="loading" /> : null}
+          </div>
+          <div className="stat-value-row">
+            <strong className={(data?.paperSummary?.totalPnLUsd ?? 0) >= 0 ? 'positive' : 'negative nowrap-value'}>
+              {balancesReady ? formatUsdValue(data?.paperSummary?.equityUsd ?? 0) : '$0.00'}
+            </strong>
+          </div>
         </div>
         <div className="stat-pill">
-          <span>可用余额</span>
-          <strong>{formatUsdValue(data?.paperSummary?.availableUsd ?? 0)}</strong>
+          <div className="stat-label-row">
+            <span>可用余额</span>
+            {!balancesReady ? <span className="stat-spinner" aria-label="loading" /> : null}
+          </div>
+          <div className="stat-value-row">
+            <strong>{balancesReady ? formatUsdValue(data?.paperSummary?.availableUsd ?? 0) : '$0.00'}</strong>
+          </div>
         </div>
         <div className="stat-pill">
           <span>打开持仓</span>
@@ -333,10 +362,15 @@ export default function Page() {
           <strong>{Number(data?.paperSummary?.capitalUsagePct ?? 0).toFixed(1)}%</strong>
         </div>
         <div className="stat-pill">
-          <span>浮动盈亏</span>
-          <strong className={(data?.paperSummary?.openPnLUsd ?? 0) >= 0 ? 'positive' : 'negative'}>
-            {formatUsd(data?.paperSummary?.openPnLUsd ?? 0)}
-          </strong>
+          <div className="stat-label-row">
+            <span>浮动盈亏</span>
+            {!balancesReady ? <span className="stat-spinner" aria-label="loading" /> : null}
+          </div>
+          <div className="stat-value-row">
+            <strong className={(data?.paperSummary?.openPnLUsd ?? 0) >= 0 ? 'positive' : 'negative'}>
+              {balancesReady ? formatUsd(data?.paperSummary?.openPnLUsd ?? 0) : '$0.00'}
+            </strong>
+          </div>
         </div>
         <div className="stat-pill">
           <span>已实现</span>
@@ -396,19 +430,32 @@ export default function Page() {
           />
         </div>
 
+        <div className="search-toolbar">
+          <input
+            type="text"
+            className="search-input"
+            placeholder="搜索 CA / Token 名称 / Symbol"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <div className="search-summary">
+            显示 {filteredAlerts.length} / {sortedAlerts.length}
+          </div>
+        </div>
+
         {loading ? (
           <div className="list-loading-wrap">
             <LoadingBlock title="Loading" description="正在加载推送列表..." />
           </div>
         ) : null}
         {error ? <div className="error-state">{error}</div> : null}
-        {!loading && !error && sortedAlerts.length === 0 ? (
+        {!loading && !error && filteredAlerts.length === 0 ? (
           <div className="empty-state">当前没有新的推送结果，等待下一轮扫描。</div>
         ) : null}
 
-        {sortedAlerts.length > 0 ? (
+        {filteredAlerts.length > 0 ? (
           <VirtualAlertList
-            alerts={sortedAlerts}
+            alerts={filteredAlerts}
             copiedKey={copiedKey}
             onCopy={handleCopy}
             streamConnected={streamConnected}
