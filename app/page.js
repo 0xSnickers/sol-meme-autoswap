@@ -215,10 +215,11 @@ export default function Page() {
   });
   const { connected: streamConnected } = useSignalStream({
     limit: APP_CONFIG.signals.snapshotLimit,
-    onSnapshot: applySnapshot,
+    onSnapshot: (json) => applySnapshot(json, { resetCountdown: false }),
   });
 
   const alerts = data?.alerts || [];
+  const paperSummary = data?.paperSummary || null;
   const sortedAlerts = useMemo(() => {
     const rows = [...alerts];
     rows.sort((left, right) => {
@@ -278,6 +279,9 @@ export default function Page() {
 
   const hasOpenPositions = (data?.paperSummary?.openCount ?? 0) > 0;
   const balancesReady = !hasOpenPositions || Boolean(data?.liveUpdatedAt);
+  const equityUsd = paperSummary?.equityUsd;
+  const availableUsd = paperSummary?.availableUsd;
+  const openPnLUsd = paperSummary?.openPnLUsd;
 
   const miniStatusCards = [
     { label: '网络', value: 'Solana', iconSrc: '/chains/solana.jpg', iconAlt: 'Solana' },
@@ -339,8 +343,8 @@ export default function Page() {
             {!balancesReady ? <span className="stat-spinner" aria-label="loading" /> : null}
           </div>
           <div className="stat-value-row">
-            <strong className={(data?.paperSummary?.totalPnLUsd ?? 0) >= 0 ? 'positive' : 'negative nowrap-value'}>
-              {balancesReady ? formatUsdValue(data?.paperSummary?.equityUsd ?? 0) : '$0.00'}
+            <strong className={`${(paperSummary?.totalPnLUsd ?? 0) >= 0 ? 'positive' : 'negative'} nowrap-value`}>
+              {equityUsd != null ? formatUsdValue(equityUsd) : '--'}
             </strong>
           </div>
         </div>
@@ -350,7 +354,7 @@ export default function Page() {
             {!balancesReady ? <span className="stat-spinner" aria-label="loading" /> : null}
           </div>
           <div className="stat-value-row">
-            <strong>{balancesReady ? formatUsdValue(data?.paperSummary?.availableUsd ?? 0) : '$0.00'}</strong>
+            <strong>{availableUsd != null ? formatUsdValue(availableUsd) : '--'}</strong>
           </div>
         </div>
         <div className="stat-pill">
@@ -367,8 +371,8 @@ export default function Page() {
             {!balancesReady ? <span className="stat-spinner" aria-label="loading" /> : null}
           </div>
           <div className="stat-value-row">
-            <strong className={(data?.paperSummary?.openPnLUsd ?? 0) >= 0 ? 'positive' : 'negative'}>
-              {balancesReady ? formatUsd(data?.paperSummary?.openPnLUsd ?? 0) : '$0.00'}
+            <strong className={(openPnLUsd ?? 0) >= 0 ? 'positive' : 'negative'}>
+              {openPnLUsd != null ? formatUsd(openPnLUsd) : '--'}
             </strong>
           </div>
         </div>

@@ -61,7 +61,7 @@ export default function VaultPage() {
   });
   const { connected: streamConnected } = useSignalStream({
     limit: APP_CONFIG.signals.snapshotLimit,
-    onSnapshot: applySnapshot,
+    onSnapshot: (json) => applySnapshot(json, { resetCountdown: false }),
   });
 
   useEffect(() => {
@@ -102,9 +102,13 @@ export default function VaultPage() {
 
   const paperPositions = data?.paperPositions || [];
   const closedPaperPositions = data?.closedPaperPositions || [];
+  const paperSummary = data?.paperSummary || null;
   const hasOpenPositions = paperPositions.length > 0;
   const floatingPnlReady = !hasOpenPositions || Boolean(data?.liveUpdatedAt);
   const balancesReady = floatingPnlReady;
+  const equityUsd = paperSummary?.equityUsd;
+  const availableUsd = paperSummary?.availableUsd;
+  const openPnLUsd = paperSummary?.openPnLUsd;
   const currentStrategy = buildPaperTradeSettings(data?.config);
   const takeProfitSummary = currentStrategy.takeProfitSteps
     .map((step, index) => `TP${index + 1} +${step.targetPercent}%/${step.sellPercent}%`)
@@ -155,8 +159,8 @@ export default function VaultPage() {
             {!balancesReady ? <span className="stat-spinner" aria-label="loading" /> : null}
           </div>
           <div className="stat-value-row">
-            <strong className={(data?.paperSummary?.totalPnLUsd ?? 0) >= 0 ? 'positive' : 'negative nowrap-value'}>
-              {balancesReady ? formatUsdValue(data?.paperSummary?.equityUsd ?? 0) : '$0.00'}
+            <strong className={`${(paperSummary?.totalPnLUsd ?? 0) >= 0 ? 'positive' : 'negative'} nowrap-value`}>
+              {equityUsd != null ? formatUsdValue(equityUsd) : '--'}
             </strong>
           </div>
         </div>
@@ -166,7 +170,7 @@ export default function VaultPage() {
             {!balancesReady ? <span className="stat-spinner" aria-label="loading" /> : null}
           </div>
           <div className="stat-value-row">
-            <strong>{balancesReady ? formatUsdValue(data?.paperSummary?.availableUsd ?? 0) : '$0.00'}</strong>
+            <strong>{availableUsd != null ? formatUsdValue(availableUsd) : '--'}</strong>
           </div>
         </div>
         <div className="stat-pill">
@@ -175,8 +179,8 @@ export default function VaultPage() {
             {!balancesReady ? <span className="stat-spinner" aria-label="loading" /> : null}
           </div>
           <div className="stat-value-row">
-            <strong className={(data?.paperSummary?.openPnLUsd ?? 0) >= 0 ? 'positive' : 'negative'}>
-              {balancesReady ? formatUsd(data?.paperSummary?.openPnLUsd ?? 0) : '$0.00'}
+            <strong className={(openPnLUsd ?? 0) >= 0 ? 'positive' : 'negative'}>
+              {openPnLUsd != null ? formatUsd(openPnLUsd) : '--'}
             </strong>
           </div>
         </div>
@@ -253,12 +257,13 @@ export default function VaultPage() {
               { label: '当前总市值', value: formatUsdValue(data?.paperSummary?.openValueUsd ?? 0) },
               {
                 label: '浮动总盈亏',
-                value: floatingPnlReady ? formatUsd(data?.paperSummary?.openPnLUsd ?? 0) : '--',
-                tone: floatingPnlReady
-                  ? (data?.paperSummary?.openPnLUsd ?? 0) >= 0
-                    ? 'positive'
-                    : 'negative'
-                  : 'neutral',
+                value: openPnLUsd != null ? formatUsd(openPnLUsd) : '--',
+                tone:
+                  openPnLUsd == null
+                    ? 'neutral'
+                    : openPnLUsd >= 0
+                      ? 'positive'
+                      : 'negative',
               },
             ]}
             positions={paperPositions}

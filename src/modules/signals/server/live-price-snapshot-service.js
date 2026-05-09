@@ -207,5 +207,6 @@ export function createLivePriceSnapshotService({
 
   return {
     getRealtimeRadarSnapshot,
+    fetchTrackedLivePrices,
   };
 }

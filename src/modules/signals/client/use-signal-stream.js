@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { APP_CONFIG } from '../../../config/app-config.js';
 import { buildSignalStreamUrl } from './signal-api-client.js';
 
@@ -11,6 +11,13 @@ export function useSignalStream({
   onInvalidSnapshot,
 } = {}) {
   const [connected, setConnected] = useState(false);
+  const onSnapshotRef = useRef(onSnapshot);
+  const onInvalidSnapshotRef = useRef(onInvalidSnapshot);
+
+  useEffect(() => {
+    onSnapshotRef.current = onSnapshot;
+    onInvalidSnapshotRef.current = onInvalidSnapshot;
+  }, [onInvalidSnapshot, onSnapshot]);
 
   useEffect(() => {
     if (!enabled) {
@@ -18,7 +25,14 @@ export function useSignalStream({
     }
 
     let disposed = false;
+    setConnected(false);
     const source = new EventSource(buildSignalStreamUrl(limit));
+
+    source.onopen = () => {
+      if (!disposed) {
+        setConnected(true);
+      }
+    };
 
     source.addEventListener('snapshot', (event) => {
       if (disposed) {
@@ -27,11 +41,11 @@ export function useSignalStream({
 
       try {
         const json = JSON.parse(event.data);
-        onSnapshot?.(json);
+        onSnapshotRef.current?.(json);
         setConnected(true);
       } catch (error) {
         setConnected(false);
-        onInvalidSnapshot?.(error);
+        onInvalidSnapshotRef.current?.(error);
       }
     });
 
@@ -51,7 +65,7 @@ export function useSignalStream({
       disposed = true;
       source.close();
     };
-  }, [enabled, limit, onInvalidSnapshot, onSnapshot]);
+  }, [enabled, limit]);
 
   return { connected };
 }

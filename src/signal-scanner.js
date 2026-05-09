@@ -799,8 +799,35 @@ async function buildDrizzleLocalResult({
   const settings = await runBuildStage('getStoredPaperTradeSettings', () =>
     getStoredPaperTradeSettings()
   );
+
+  const openPositions = await RADAR_REPOSITORIES.positions.listByStatus('open', 0);
+  const trackedTokens = openPositions.map((p) => ({ chain: p.chain, address: p.address }));
+  const livePriceMap = await runBuildStage('fetchTrackedLivePrices', () =>
+    fetchTrackedLivePrices(trackedTokens)
+  );
+
+  const enrichedTokens = [...tokens];
+  for (const position of openPositions) {
+    const key = `${position.chain}:${position.address}`;
+    const livePrice = livePriceMap.get(key);
+    if (livePrice != null && !enrichedTokens.some((t) => t.address === position.address)) {
+      enrichedTokens.push({
+        chain: position.chain,
+        address: position.address,
+        price: livePrice,
+        name: position.name,
+        symbol: position.symbol,
+      });
+    } else if (livePrice != null) {
+      const token = enrichedTokens.find((t) => t.address === position.address);
+      if (token) {
+        token.price = livePrice;
+      }
+    }
+  }
+
   await runBuildStage('processTradePlans', () =>
-    processTradePlans(null, currentAlerts, tokens, scannedAtTs, {
+    processTradePlans(null, currentAlerts, enrichedTokens, scannedAtTs, {
       repositories: RADAR_REPOSITORIES,
       settings,
     })
@@ -1000,6 +1027,39 @@ const {
   sumBn,
 });
 
+const { checkNarrativeNovelty, isTokenSeen, recordToken } = createRuntimeStateService({
+  isSimilarTheme,
+  momentumPushed: MOMENTUM_PUSHED,
+  momentumTracker: MOMENTUM_TRACKER,
+  narrativesRuntime: NARRATIVES_RUNTIME,
+  repositories: RADAR_REPOSITORIES,
+  tokensSeenRuntime: TOKENS_SEEN_RUNTIME,
+});
+
+const {
+  getPersistedRadarSnapshot,
+  persistAlerts,
+} = createScannerPersistenceService({
+  createEmptyRadarSnapshot,
+  getBuySellMetrics,
+  getStoredPaperTradeSettings,
+  readPersistedSignalSnapshot: (limit) =>
+    readPersistedSignalSnapshotFromDrizzle(limit, { repositories: RADAR_REPOSITORIES }),
+});
+
+const { getRealtimeRadarSnapshot, fetchTrackedLivePrices } = createLivePriceSnapshotService({
+  addBn,
+  divBn,
+  fetchJson,
+  fetchNewTokens,
+  getPersistedRadarSnapshot,
+  mulBn,
+  paperTotalCapitalUsd: PAPER_TOTAL_CAPITAL_USD,
+  roundTo,
+  subBn,
+  sumBn,
+});
+
 const {
   getOpenPaperPosition,
   getOpenPaperPositionCount,
@@ -1030,6 +1090,7 @@ const {
   paperTotalCapitalUsd: PAPER_TOTAL_CAPITAL_USD,
   roundTo,
   subBn,
+  fetchTrackedLivePrices,
 });
 
 const { getRadarConfig } = createScannerConfigService({
@@ -1110,48 +1171,6 @@ const { processTradePlans } = createTradePlanProcessor({
   scaleIntoPaperPositionInMemory,
   updatePaperPositions,
   updatePaperPositionsInMemory,
-});
-
-const { checkNarrativeNovelty, isTokenSeen, recordToken } = createRuntimeStateService({
-  isSimilarTheme,
-  momentumPushed: MOMENTUM_PUSHED,
-  momentumTracker: MOMENTUM_TRACKER,
-  narrativesRuntime: NARRATIVES_RUNTIME,
-  repositories: RADAR_REPOSITORIES,
-  tokensSeenRuntime: TOKENS_SEEN_RUNTIME,
-});
-
-const {
-  getPersistedRadarSnapshot,
-  persistAlerts,
-} = createScannerPersistenceService({
-  createEmptyRadarSnapshot,
-  getBuySellMetrics,
-  getPaperPositions,
-  getPaperPositionSizingByMetrics,
-  getPaperTradeSummary,
-  getRadarConfig,
-  getRadarMeta,
-  getRecentPersistedAlerts,
-  getSignalTimeline,
-  getStoredPaperTradeSettings,
-  getStrategyRuntimeInfo,
-  getStoredTradeSettings: getPaperTradeSettings,
-  readPersistedSignalSnapshot: (limit) =>
-    readPersistedSignalSnapshotFromDrizzle(limit, { repositories: RADAR_REPOSITORIES }),
-});
-
-const { getRealtimeRadarSnapshot } = createLivePriceSnapshotService({
-  addBn,
-  divBn,
-  fetchJson,
-  fetchNewTokens,
-  getPersistedRadarSnapshot,
-  mulBn,
-  paperTotalCapitalUsd: PAPER_TOTAL_CAPITAL_USD,
-  roundTo,
-  subBn,
-  sumBn,
 });
 
 const { scanNarratives } = createScanOrchestratorService({

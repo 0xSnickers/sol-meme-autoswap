@@ -1,15 +1,27 @@
 import { APP_CONFIG } from '../../../config/app-config.js';
 
-export function buildSignalSnapshotUrl(limit = APP_CONFIG.signals.snapshotLimit) {
-  return `/api/signals/snapshot?limit=${encodeURIComponent(limit)}`;
+export function buildSignalSnapshotUrl(
+  limit = APP_CONFIG.signals.snapshotLimit,
+  mode = 'persisted'
+) {
+  const params = new URLSearchParams({
+    limit: String(limit),
+  });
+  if (mode === 'realtime') {
+    params.set('mode', 'realtime');
+  }
+  return `/api/signals/snapshot?${params.toString()}`;
 }
 
 export function buildSignalStreamUrl(limit = APP_CONFIG.signals.snapshotLimit) {
   return `/api/signals/stream?limit=${encodeURIComponent(limit)}`;
 }
 
-export async function fetchSignalSnapshot({ limit = APP_CONFIG.signals.snapshotLimit } = {}) {
-  const response = await fetch(buildSignalSnapshotUrl(limit), {
+export async function fetchSignalSnapshot({
+  limit = APP_CONFIG.signals.snapshotLimit,
+  mode = 'persisted',
+} = {}) {
+  const response = await fetch(buildSignalSnapshotUrl(limit, mode), {
     cache: 'no-store',
   });
   const json = await response.json();

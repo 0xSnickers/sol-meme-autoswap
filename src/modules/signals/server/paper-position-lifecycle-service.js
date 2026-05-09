@@ -19,6 +19,7 @@ export function createPaperPositionLifecycleService({
   paperTotalCapitalUsd,
   roundTo,
   subBn,
+  fetchTrackedLivePrices = null,
 }) {
   const {
     getPaperEntrySizing,
@@ -276,6 +277,20 @@ export function createPaperPositionLifecycleService({
       ? await repos.positions.listByStatus('open')
       : db.prepare('SELECT * FROM paper_positions WHERE status = ? ORDER BY opened_at DESC').all('open');
 
+    let livePriceMap = new Map();
+    if (fetchTrackedLivePrices) {
+      const missingTrackedTokens = openPositions.filter(
+        (position) => !tokenMap.has(`${position.chain}:${position.address}`)
+      );
+      if (missingTrackedTokens.length > 0) {
+        const trackedTokens = missingTrackedTokens.map((p) => ({
+          chain: p.chain,
+          address: p.address,
+        }));
+        livePriceMap = await fetchTrackedLivePrices(trackedTokens);
+      }
+    }
+
     const updateStmt = repos
       ? null
       : db.prepare(`
@@ -299,15 +314,24 @@ export function createPaperPositionLifecycleService({
     `);
 
     for (const position of openPositions) {
-      const token = tokenMap.get(`${position.chain}:${position.address}`);
-      if (!token || !token.price || !(position.entry_price ?? position.entryPrice)) {
+      const key = `${position.chain}:${position.address}`;
+      let currentPrice = null;
+
+      const tokenFromScan = tokenMap.get(key);
+      if (tokenFromScan?.price) {
+        currentPrice = Number(tokenFromScan.price);
+      } else if (livePriceMap.has(key)) {
+        currentPrice = Number(livePriceMap.get(key));
+      }
+
+      if (!currentPrice || !(position.entry_price ?? position.entryPrice)) {
         continue;
       }
 
       const nextState = calculateNextPositionState(
         {
           position,
-          currentPrice: Number(token.price || 0),
+          currentPrice,
           updatedAt,
           settings,
           takeProfitSteps: getPositionTakeProfitSteps(position, settings),
