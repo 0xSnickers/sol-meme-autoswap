@@ -42,30 +42,26 @@ export function createLivePriceSnapshotService({
 
     const targetKeys = new Set(trackedTokens.map((token) => `${token.chain}:${token.address}`));
 
-    try {
-      const gmgnTokens = await fetchNewTokens();
-      for (const token of gmgnTokens) {
-        const key = `${token.chain}:${token.address}`;
-        if (targetKeys.has(key) && token.price > 0) {
-          priceMap.set(key, Number(token.price));
-        }
-      }
-    } catch {
-      // Ignore and fall back to DexScreener when GMGN quote fetch fails.
-    }
-
-    const missingTokens = trackedTokens.filter(
-      (token) => !priceMap.has(`${token.chain}:${token.address}`)
-    );
-
     await Promise.all(
-      missingTokens.map(async (token) => {
+      trackedTokens.map(async (token) => {
         const price = await fetchDexScreenerPrice(token.address);
         if (price != null && price > 0) {
           priceMap.set(`${token.chain}:${token.address}`, price);
         }
       })
     );
+
+    try {
+      const gmgnTokens = await fetchNewTokens();
+      for (const token of gmgnTokens) {
+        const key = `${token.chain}:${token.address}`;
+        if (targetKeys.has(key) && !priceMap.has(key) && token.price > 0) {
+          priceMap.set(key, Number(token.price));
+        }
+      }
+    } catch {
+      // DexScreener is already the preferred source for live mark prices.
+    }
 
     return priceMap;
   }

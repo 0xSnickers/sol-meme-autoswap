@@ -279,11 +279,8 @@ export function createPaperPositionLifecycleService({
 
     let livePriceMap = new Map();
     if (fetchTrackedLivePrices) {
-      const missingTrackedTokens = openPositions.filter(
-        (position) => !tokenMap.has(`${position.chain}:${position.address}`)
-      );
-      if (missingTrackedTokens.length > 0) {
-        const trackedTokens = missingTrackedTokens.map((p) => ({
+      if (openPositions.length > 0) {
+        const trackedTokens = openPositions.map((p) => ({
           chain: p.chain,
           address: p.address,
         }));
@@ -318,10 +315,10 @@ export function createPaperPositionLifecycleService({
       let currentPrice = null;
 
       const tokenFromScan = tokenMap.get(key);
-      if (tokenFromScan?.price) {
-        currentPrice = Number(tokenFromScan.price);
-      } else if (livePriceMap.has(key)) {
+      if (livePriceMap.has(key)) {
         currentPrice = Number(livePriceMap.get(key));
+      } else if (tokenFromScan?.price) {
+        currentPrice = Number(tokenFromScan.price);
       }
 
       if (!currentPrice || !(position.entry_price ?? position.entryPrice)) {
