@@ -4,6 +4,7 @@ import {
   parseTakeProfitStepsFromEnv,
 } from '../lib/paper-trade-settings.js';
 import { resolveSignalDbDriver } from '../../../shared/db/client/index.js';
+import { ensurePostgresSchemaReady } from '../../../shared/db/client/postgres.js';
 import { createRadarRepositories } from '../../../shared/db/repositories/index.js';
 
 function toNumber(value, fallback = 0) {
@@ -92,12 +93,14 @@ export function canUseDrizzlePaperTradeSettingsQueries(env = process.env) {
 export async function readPaperTradeSettingsFromDrizzle(options = {}) {
   const env = options.env || process.env;
   const repos = options.repositories || createRadarRepositories(options);
+  await ensurePostgresSchemaReady(repos.drizzleClient);
   const raw = await repos.meta.getValue('paper_trade_settings', null);
   return parseStoredPaperTradeSettings(raw, env);
 }
 
 export async function readPaperTradeSettingsLockStateFromDrizzle(options = {}) {
   const repos = options.repositories || createRadarRepositories(options);
+  await ensurePostgresSchemaReady(repos.drizzleClient);
   const openCount = Number(await repos.positions.countByStatus('open'));
   return {
     locked: openCount > 0,
@@ -108,6 +111,7 @@ export async function readPaperTradeSettingsLockStateFromDrizzle(options = {}) {
 export async function savePaperTradeSettingsToDrizzle(payload = {}, options = {}) {
   const env = options.env || process.env;
   const repos = options.repositories || createRadarRepositories(options);
+  await ensurePostgresSchemaReady(repos.drizzleClient);
   const normalized = normalizePaperTradeSettings(payload, env);
 
   await repos.meta.setValue('paper_trade_settings', JSON.stringify(normalized));

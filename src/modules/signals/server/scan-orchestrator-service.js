@@ -4,6 +4,7 @@ export function createScanOrchestratorService({
   checkNarrativeNovelty,
   classifyNarrative,
   compareSignalPriority,
+  ensureStorageReady = null,
   ensureStrategySessionMeta,
   fetchNewTokens,
   isTokenSeen,
@@ -40,6 +41,7 @@ export function createScanOrchestratorService({
     const db = null;
 
     try {
+      await runStage('ensureStorageReady', () => ensureStorageReady?.());
       await runStage('ensureStrategySessionMeta', () => ensureStrategySessionMeta(db));
 
       const tokens = await fetchNewTokens();

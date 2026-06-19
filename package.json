@@ -8,13 +8,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "db:generate": "drizzle-kit generate",
-    "db:studio": "drizzle-kit studio",
+    "db:push": "drizzle-kit push --force",
     "signal:worker": "node scripts/signal-worker/run.js",
-    "signal:once": "node scripts/signal-worker/run.js --once",
-    "signal:cleanup": "node scripts/maintenance/cleanup-signal-data.js",
-    "signal:reset": "node scripts/maintenance/reset-signal-data.js",
-    "telegram:test": "node scripts/telegram/test-bot.js"
+    "signal:once": "node scripts/signal-worker/run.js --once"
   },
   "keywords": [],
   "author": "",

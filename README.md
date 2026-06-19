@@ -132,22 +132,38 @@ npm run dev
 npm run signal:worker
 ```
 
-如果需要切到 PostgreSQL：
+如果需要切到本地 Docker PostgreSQL：
+
+1. 启动数据库：
+
+```bash
+docker compose -f docker-compose.postgres.yml up -d
+```
+
+2. 把 `.env` 改成：
 
 ```env
 SIGNAL_DB_DRIVER=postgres
-SIGNAL_DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/postgres
+SIGNAL_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/automated_trading_meme
 ```
 
-这里的 PostgreSQL 可以是：
+3. 首次建表时执行：
+
+```bash
+npm run db:push
+```
+
+这里的 PostgreSQL 也可以换成：
 
 - 自建 PostgreSQL
 - Supabase 提供的 PostgreSQL 连接串
 
 ### 5. 测试 Telegram
 
+如需单独测试 Telegram 机器人，可直接执行：
+
 ```bash
-npm run telegram:test
+node scripts/telegram/test-bot.js
 ```
 
 ## 常用脚本
@@ -156,11 +172,9 @@ npm run telegram:test
 npm run dev            # 启动 Next.js 开发环境
 npm run build          # 生产构建
 npm start              # 启动生产 Web 服务
+npm run db:push        # 按当前 schema 初始化 / 更新数据库表结构（非交互）
 npm run signal:worker  # 常驻信号扫描 worker
 npm run signal:once    # 只执行一轮扫描
-npm run signal:cleanup # 清理历史数据
-npm run signal:reset   # 按当前数据源重置测试数据
-npm run telegram:test  # 测试 Telegram 机器人
 ```
 
 ## 核心目录
@@ -215,8 +229,7 @@ npm run telegram:test  # 测试 Telegram 机器人
 
 - 不要提交 `.env`
 - 若目标是 `30s` 级别策略，请确保 worker 常驻运行
-- 如果要重新测试当前策略，先执行 `npm run signal:reset`
-- `signal:reset` 会按当前 `.env` 的 `SIGNAL_DB_DRIVER` 清理对应数据源
+- 如果要重新测试当前策略，可直接执行 `node scripts/maintenance/reset-signal-data.js`
 - 策略参数在存在未平仓持仓时会被锁定，防止运行中修改风控规则
 
 ## 策略流程图

@@ -7,8 +7,13 @@
 ```bash
 npm run signal:worker
 npm run signal:once
-npm run signal:cleanup
-npm run signal:reset
+```
+
+如需维护数据，可直接执行：
+
+```bash
+node scripts/maintenance/cleanup-signal-data.js
+node scripts/maintenance/reset-signal-data.js
 ```
 
 ## 行为
@@ -17,10 +22,6 @@ npm run signal:reset
   - 按 `SIGNAL_SCAN_INTERVAL` 持续扫描并推送信号
 - `signal:once`
   - 只执行一轮信号扫描，适合本地调试或手动触发
-- `signal:cleanup`
-  - 手动清理 SQLite / PostgreSQL 中超出保留周期的旧数据，适合配合 `cron`、`launchd`、`pm2` 或云服务器定时任务
-- `signal:reset`
-  - 重置当前测试数据，适合切换新策略前清库重跑
 
 ## 推荐命令
 
@@ -37,11 +38,33 @@ npm run dev
 npm run signal:worker
 ```
 
-如果后续需要切到 PostgreSQL，则把 `.env` 改成：
+如果后续需要切到 PostgreSQL，则按下面顺序处理：
+
+1. 启动本地数据库：
+
+```bash
+docker compose -f docker-compose.postgres.yml up -d
+```
+
+2. 把 `.env` 改成：
 
 ```env
 SIGNAL_DB_DRIVER=postgres
-SIGNAL_DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/postgres
+SIGNAL_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/automated_trading_meme
+```
+
+3. 初始化表结构：
+
+```bash
+npm run db:push
+```
+
+4. 再执行 worker 或单次扫描：
+
+```bash
+npm run signal:worker
+# 或
+npm run signal:once
 ```
 
 ## 建议环境变量

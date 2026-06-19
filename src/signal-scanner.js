@@ -74,7 +74,10 @@ import {
   readPaperTradeSettingsLockStateFromDrizzle,
   savePaperTradeSettingsToDrizzle,
 } from './modules/signals/query/paper-trade-settings-query-service.js';
-import { readPersistedSignalSnapshotFromDrizzle } from './modules/signals/query/persisted-signal-query-service.js';
+import {
+  readPersistedSignalSnapshotFromDrizzle,
+} from './modules/signals/query/persisted-signal-query-service.js';
+import { ensurePostgresSchemaReady } from './shared/db/client/postgres.js';
 import { createRadarRepositories } from './shared/db/repositories/index.js';
 
 dotenv.config({
@@ -157,6 +160,10 @@ const {
 } = createRuntimeTrackers();
 const { fetchJson, fetchWithEnv } = createOutboundHttpClient();
 const RADAR_REPOSITORIES = createRadarRepositories();
+
+async function ensureRadarStorageReady() {
+  await ensurePostgresSchemaReady(RADAR_REPOSITORIES.drizzleClient);
+}
 
 function chunkArray(items = [], size = 100) {
   if (!Array.isArray(items) || !items.length) {
@@ -1179,6 +1186,7 @@ const { scanNarratives } = createScanOrchestratorService({
   checkNarrativeNovelty,
   classifyNarrative,
   compareSignalPriority,
+  ensureStorageReady: ensureRadarStorageReady,
   ensureStrategySessionMeta: ensureStrategySessionMetaForStorage,
   fetchNewTokens,
   isTokenSeen,

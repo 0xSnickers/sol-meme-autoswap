@@ -3,6 +3,7 @@ import {
   normalizeTakeProfitSteps,
   parseTakeProfitStepsFromEnv,
 } from '../lib/paper-trade-settings.js';
+import { ensurePostgresSchemaReady } from '../../../shared/db/client/postgres.js';
 import { createRadarRepositories } from '../../../shared/db/repositories/index.js';
 import { resolveSignalDbDriver } from '../../../shared/db/client/index.js';
 
@@ -357,6 +358,7 @@ export async function readPersistedSignalSnapshotFromDrizzle(limit = 60, options
   const env = options.env || process.env;
   const safeLimit = clampLimit(limit, 1, 120, 60);
   const repos = options.repositories || createRadarRepositories(options);
+  await ensurePostgresSchemaReady(repos.drizzleClient);
   const driver = repos.drizzleClient?.driver || resolveSignalDbDriver(env);
   const cacheEnabled = options.cache !== false;
   const cacheTtlMs = Math.max(
