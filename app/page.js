@@ -20,7 +20,8 @@ import LoadingBlock from './components/LoadingBlock';
 import { TradeDecisionIcon, TradeReasonIcon } from './components/TradeConditionsTooltip';
 import TokenSignalTimeline from './components/TokenSignalTimeline';
 import VirtualListTable from './components/VirtualListTable';
-import { AddressCopy, ExternalLinks, TokenAvatar } from './components/token-ui';
+import { AddressCopy, ChainBadge, ExternalLinks, TokenAvatar } from './components/token-ui';
+import { buildChainPaperSummary, CHAIN_OPTIONS, getSelectedChainLabel, useSelectedChain } from './components/useSelectedChain';
 
 const POLL_SECONDS = APP_CONFIG.signals.pollSeconds;
 const ALERT_ROW_HEIGHT = APP_CONFIG.ui.alertRowHeight;
@@ -59,12 +60,14 @@ function AlertRow({
             <div className="token-label-stack">
               <div className="token-title-inline">
                 <strong className="token-symbol-primary">{alert.symbol}</strong>
+                <ChainBadge chain={alert.chain} />
                 <span className={`live-badge compact-live token-live-badge ${streamConnected ? 'connected' : 'disconnected'}`}>
                   <span className="live-dot" />
                   {streamConnected ? '实时' : '连接中'}
                 </span>
                 <ExternalLinks
                   address={alert.address}
+                  chain={alert.chain}
                   twitter={alert.twitter}
                   xOnly
                 />
@@ -197,6 +200,8 @@ function SortButton({ label, active, direction, onClick }) {
 }
 
 export default function Page() {
+  const [selectedChain, setSelectedChain] = useSelectedChain();
+  const [pollFallbackEnabled, setPollFallbackEnabled] = useState(false);
   const [copiedKey, setCopiedKey] = useState('');
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState('latestPushedAt');
@@ -205,21 +210,29 @@ export default function Page() {
     data,
     error,
     loading,
-    countdown,
     headerMeta,
     applySnapshot,
+    refresh,
   } = useSignalSnapshot({
     limit: APP_CONFIG.signals.snapshotLimit,
     pollSeconds: POLL_SECONDS,
     errorMessage: '加载失败',
+    pollEnabled: pollFallbackEnabled,
   });
   const { connected: streamConnected } = useSignalStream({
     limit: APP_CONFIG.signals.snapshotLimit,
     onSnapshot: (json) => applySnapshot(json, { resetCountdown: false }),
+    onFallbackChange: setPollFallbackEnabled,
   });
 
-  const alerts = data?.alerts || [];
-  const paperSummary = data?.paperSummary || null;
+  const alerts = useMemo(
+    () => (data?.alerts || []).filter((alert) => alert.chain === selectedChain),
+    [data?.alerts, selectedChain]
+  );
+  const chainOpenPositions = (data?.paperPositions || []).filter((position) => position.chain === selectedChain);
+  const chainClosedPositions = (data?.closedPaperPositions || []).filter((position) => position.chain === selectedChain);
+  const paperSummary = buildChainPaperSummary(data?.paperSummary, chainOpenPositions, chainClosedPositions);
+  const selectedChainLabel = getSelectedChainLabel(selectedChain);
   const sortedAlerts = useMemo(() => {
     const rows = [...alerts];
     rows.sort((left, right) => {
@@ -277,14 +290,17 @@ export default function Page() {
     });
   }, [query, sortedAlerts]);
 
-  const hasOpenPositions = (data?.paperSummary?.openCount ?? 0) > 0;
+  const hasOpenPositions = paperSummary.openCount > 0;
   const balancesReady = !hasOpenPositions || Boolean(data?.liveUpdatedAt);
   const equityUsd = paperSummary?.equityUsd;
   const availableUsd = paperSummary?.availableUsd;
   const openPnLUsd = paperSummary?.openPnLUsd;
 
   const miniStatusCards = [
-    { label: '网络', value: 'Solana', iconSrc: '/chains/solana.jpg', iconAlt: 'Solana' },
+    {
+      label: '网络', value: selectedChain, iconSrc: CHAIN_OPTIONS[0].iconSrc, iconAlt: '网络', options: CHAIN_OPTIONS,
+      onChange: (chain) => { setSelectedChain(chain); refresh(); },
+    },
     {
       label: '策略运行',
       value: headerMeta.strategyRuntimeLabel || formatDuration(headerMeta.strategyRuntimeSeconds ?? 0),
@@ -297,10 +313,6 @@ export default function Page() {
       label: '实时状态',
       value: streamConnected ? '已连接' : '连接中',
       tone: streamConnected ? 'positive' : 'warning',
-    },
-    {
-      label: '实时更新',
-      value: { seconds: countdown, total: POLL_SECONDS },
     },
   ];
 
@@ -359,11 +371,11 @@ export default function Page() {
         </div>
         <div className="stat-pill">
           <span>打开持仓</span>
-          <strong>{data?.paperSummary?.openCount ?? 0}</strong>
+          <strong>{paperSummary.openCount}</strong>
         </div>
         <div className="stat-pill">
           <span>资金使用率</span>
-          <strong>{Number(data?.paperSummary?.capitalUsagePct ?? 0).toFixed(1)}%</strong>
+          <strong>{Number(paperSummary.capitalUsagePct ?? 0).toFixed(1)}%</strong>
         </div>
         <div className="stat-pill">
           <div className="stat-label-row">
@@ -378,8 +390,8 @@ export default function Page() {
         </div>
         <div className="stat-pill">
           <span>已实现</span>
-          <strong className={(data?.paperSummary?.closedPnLUsd ?? 0) >= 0 ? 'positive' : 'negative'}>
-            {formatUsd(data?.paperSummary?.closedPnLUsd ?? 0)}
+          <strong className={(paperSummary.closedPnLUsd ?? 0) >= 0 ? 'positive' : 'negative'}>
+            {formatUsd(paperSummary.closedPnLUsd ?? 0)}
           </strong>
         </div>
         <div className="stat-pill">
@@ -449,12 +461,19 @@ export default function Page() {
 
         {loading ? (
           <div className="list-loading-wrap">
-            <LoadingBlock title="Loading" description="正在加载推送列表..." />
+            <LoadingBlock
+              title={data ? '正在刷新' : '正在加载'}
+              description={data ? '正在同步当前网络的最新推送...' : '正在加载推送列表...'}
+              compact={Boolean(data)}
+            />
           </div>
         ) : null}
-        {error ? <div className="error-state">{error}</div> : null}
+        {error ? <div className="error-state" role="alert">{error}</div> : null}
         {!loading && !error && filteredAlerts.length === 0 ? (
-          <div className="empty-state">当前没有新的推送结果，等待下一轮扫描。</div>
+          <div className="empty-state">
+            {selectedChainLabel} 暂无已保存的推送记录
+            {data?.scannedAt ? `，全部网络最近扫描于 ${formatTime(data.scannedAt)}` : '，扫描服务尚未产生数据'}。
+          </div>
         ) : null}
 
         {filteredAlerts.length > 0 ? (

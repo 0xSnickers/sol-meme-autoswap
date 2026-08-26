@@ -2,43 +2,68 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import { withAppBasePath } from '../../src/lib/app-path.js';
 
 const NAV_ITEMS = [
   { key: 'pulse', href: '/', label: '最新信号' },
   { key: 'vault', href: '/vault', label: '持仓信息' },
 ];
 
+function RealtimeStatusIcon({ connected }) {
+  if (!connected) {
+    return <span className="realtime-status-spinner" aria-hidden="true" />;
+  }
+
+  return (
+    <svg viewBox="0 0 20 20" className="realtime-status-icon" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M10 2.25a7.75 7.75 0 1 0 0 15.5 7.75 7.75 0 0 0 0-15.5Zm3.62 5.65-4.2 4.55a.75.75 0 0 1-1.08.02L6.2 10.38a.75.75 0 1 1 1.05-1.07l1.59 1.56 3.68-3.98a.75.75 0 1 1 1.1 1.01Z"
+      />
+    </svg>
+  );
+}
+
 function MiniStatusCard({ label, value, tone = 'neutral' }) {
-  const showLoading = label === '实时更新' && typeof value === 'object' && value !== null;
-  const progress = showLoading
-    ? Math.max(0, Math.min(100, Math.round(((value.total - value.seconds) / value.total) * 100)))
-    : 0;
+  const isRealtimeStatus = label === '实时状态';
 
   return (
     <div className={`mini-status-card ${tone !== 'neutral' ? `is-${tone}` : ''}`}>
       <span>{label}</span>
-      {showLoading ? (
-        <div className="mini-loading-card">
-          <strong className="mini-loading-value">Loading {value.seconds}s</strong>
-          <div className="mini-loading-track" aria-hidden="true">
-            <span className="mini-loading-bar" style={{ width: `${progress}%` }} />
-          </div>
-        </div>
-      ) : (
+      <div className="mini-status-value-row">
+        {isRealtimeStatus ? <RealtimeStatusIcon connected={tone === 'positive'} /> : null}
         <strong>{value}</strong>
-      )}
+      </div>
     </div>
   );
 }
 
-function ChainMiniStatusCard({ label, value, iconSrc, iconAlt }) {
+function ChainMiniStatusCard({ label, value, iconSrc, iconAlt, options, onChange }) {
+  const selectedOption = options?.find((option) => option.value === value);
+
   return (
     <div className="mini-status-card network-mini-card">
-      <span>{label}</span>
-      <strong className="chain-mini-value">
-        <Image src={iconSrc} alt={iconAlt} width={14} height={14} className="chain-mini-icon" />
-        {value}
-      </strong>
+      <label htmlFor="network-selector">{label}</label>
+      <div className="chain-select-wrap">
+        <Image
+          src={selectedOption?.iconSrc || iconSrc}
+          alt={selectedOption?.label || iconAlt}
+          width={14}
+          height={14}
+          className="chain-mini-icon"
+        />
+        <select
+          id="network-selector"
+          className="chain-select"
+          value={value}
+          onChange={(event) => onChange?.(event.target.value)}
+          aria-label="选择网络"
+        >
+          {options?.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+      </div>
     </div>
   );
 }
@@ -49,7 +74,7 @@ export default function AppHeader({ title, navKey, statusCards = [], actions = n
       <div className="topbar-left">
         <div className="brand-block">
           <Image
-            src="/branding/logo.jpg"
+            src={withAppBasePath('/branding/logo.jpg')}
             alt="automated-trading-meme"
             width={48}
             height={48}
@@ -63,7 +88,12 @@ export default function AppHeader({ title, navKey, statusCards = [], actions = n
 
         <div className="page-nav">
           {NAV_ITEMS.map((item) => (
-            <Link key={item.key} href={item.href} className={`nav-link ${navKey === item.key ? 'active' : ''}`}>
+            <Link
+              key={item.key}
+              href={item.href}
+              className={`nav-link ${navKey === item.key ? 'active' : ''}`}
+              aria-current={navKey === item.key ? 'page' : undefined}
+            >
               {item.label}
             </Link>
           ))}
@@ -80,6 +110,8 @@ export default function AppHeader({ title, navKey, statusCards = [], actions = n
               value={item.value}
               iconSrc={item.iconSrc}
               iconAlt={item.iconAlt}
+              options={item.options}
+              onChange={item.onChange}
             />
           ) : (
             <MiniStatusCard key={item.label} label={item.label} value={item.value} tone={item.tone} />

@@ -4,6 +4,7 @@ export function createPaperPositionEngine({
   getOpenPositionMarkToMarketState,
   mulBn,
   normalizePaperTradeSettings,
+  getSellExecution,
   roundTo,
   subBn,
 }) {
@@ -16,7 +17,14 @@ export function createPaperPositionEngine({
       position.remaining_position_size_usd ?? position.position_size_usd ?? 0
     );
     const realizedPnlUsd = Number(position.realized_pnl_usd || 0);
-    const currentValueUsd = roundTo(mulBn(remainingTokenAmount, currentPrice), 2);
+    const currentValueUsd = roundTo(
+      getSellExecution({
+        chain: position.chain,
+        quotedPrice: currentPrice,
+        tokenAmount: remainingTokenAmount,
+      }).netProceedsUsd,
+      2
+    );
     const pnlUsd = roundTo(
       addBn(realizedPnlUsd, subBn(currentValueUsd, remainingCostBasisUsd)),
       2
@@ -57,21 +65,6 @@ export function createPaperPositionEngine({
     );
   }
 
-  function getTrailingStopState(entryPrice, peakPrice, settings) {
-    const normalized = normalizePaperTradeSettings(settings);
-    const activationPrice =
-      Number(entryPrice || 0) * (1 + normalized.trailingStartPercent / 100);
-    const active = activationPrice > 0 && Number(peakPrice || 0) >= activationPrice;
-
-    return {
-      active,
-      activationPrice,
-      stopPrice: active
-        ? Number(peakPrice || 0) * (1 - normalized.trailingStopPercent / 100)
-        : 0,
-    };
-  }
-
   function shouldCloseForTimeStop(position, currentPrice, updatedAtTs, takeProfitSteps, settings) {
     const normalized = normalizePaperTradeSettings(settings);
     const openedAtTs = getPositionOpenedAtTs(position);
@@ -99,6 +92,7 @@ export function createPaperPositionEngine({
     { position, currentPrice, updatedAt, settings, takeProfitSteps },
     { mode, updatedAtIso = null } = {}
   ) {
+    const normalizedSettings = normalizePaperTradeSettings(settings);
     let remainingTokenAmount = Number(
       position.remaining_token_amount ??
         position.remainingTokenAmount ??
@@ -118,11 +112,12 @@ export function createPaperPositionEngine({
       position.realized_proceeds_usd ?? position.realizedProceedsUsd ?? 0
     );
     let tpStage = Number(position.tp_stage ?? position.tpStage ?? 0);
+    let lastExecutionPrice = currentPrice;
     const entryPrice = Number(position.entry_price ?? position.entryPrice ?? 0);
     const tokenAmount = Number(position.token_amount ?? position.tokenAmount ?? 0);
     const positionSizeUsd = Number(position.position_size_usd ?? position.positionSizeUsd ?? 0);
     const stopLossPercent = Number(
-      position.stop_loss_pct ?? position.stopLossPct ?? settings.stopLossPercent
+      position.stop_loss_pct ?? position.stopLossPct ?? normalizedSettings.stopLossPercent
     );
     const peakPrice = getPositionPeakPrice(position, currentPrice, entryPrice);
 
@@ -133,7 +128,18 @@ export function createPaperPositionEngine({
         break;
       }
 
-      const targetSellTokenAmount = tokenAmount * Math.min(step.sellPercent / 100, 1);
+      let targetSellTokenAmount = tokenAmount * Math.min(step.sellPercent / 100, 1);
+      if (step.sellMode === 'remaining_percent') {
+        targetSellTokenAmount = remainingTokenAmount * Math.min(step.sellPercent / 100, 1);
+      } else if (step.sellMode === 'recover_principal') {
+        const principalStillNeeded = Math.max(0, positionSizeUsd - realizedProceedsUsd);
+        targetSellTokenAmount = findTokenAmountForNetProceeds(
+          position.chain,
+          currentPrice,
+          remainingTokenAmount,
+          principalStillNeeded
+        );
+      }
       const sellTokenAmount = Math.min(remainingTokenAmount, roundTo(targetSellTokenAmount, 6));
       if (sellTokenAmount <= 0) {
         break;
@@ -146,7 +152,13 @@ export function createPaperPositionEngine({
               6
             )
           : 0;
-      const proceedsUsd = roundTo(mulBn(sellTokenAmount, currentPrice), 6);
+      const sellExecution = getSellExecution({
+        chain: position.chain,
+        quotedPrice: currentPrice,
+        tokenAmount: sellTokenAmount,
+      });
+      const proceedsUsd = roundTo(sellExecution.netProceedsUsd, 6);
+      lastExecutionPrice = sellExecution.effectivePrice;
       realizedProceedsUsd = roundTo(addBn(realizedProceedsUsd, proceedsUsd), 6);
       realizedPnlUsd = roundTo(addBn(realizedPnlUsd, subBn(proceedsUsd, costBasisSoldUsd)), 6);
       remainingTokenAmount = Math.max(
@@ -200,6 +212,7 @@ export function createPaperPositionEngine({
     if (remainingTokenAmount <= 0) {
       return buildClosedState({
         currentPrice,
+        closePrice: lastExecutionPrice,
         closeReason: `take_profit_stage_${tpStage}`,
         updatedAt,
         updatedAtIso,
@@ -215,9 +228,10 @@ export function createPaperPositionEngine({
       });
     }
 
-    const slPrice = entryPrice * (1 - stopLossPercent / 100);
-    if (currentPrice <= slPrice) {
+    const protectedExitPrice = entryPrice * (1 + normalizedSettings.tp1ProtectionPercent / 100);
+    if (tpStage > 0 && currentPrice <= protectedExitPrice) {
       const finalState = closeRemainingPosition({
+        chain: position.chain,
         currentPrice,
         remainingTokenAmount,
         remainingCostBasisUsd,
@@ -226,6 +240,71 @@ export function createPaperPositionEngine({
       });
       return buildClosedState({
         currentPrice,
+        closePrice: finalState.executionPrice,
+        closeReason: `tp1_protection_${normalizedSettings.tp1ProtectionPercent}`,
+        updatedAt,
+        updatedAtIso,
+        realizedPnlUsd: finalState.realizedPnlUsd,
+        realizedProceedsUsd: finalState.realizedProceedsUsd,
+        tpStage,
+        takeProfitSteps,
+        takeProfitPct: nextTakeProfitPct,
+        stopLossPct: stopLossPercent,
+        peakPrice,
+        peakPnlPct,
+        positionSizeUsd,
+      });
+    }
+
+    const openedAtTs = getPositionOpenedAtTs(position);
+    const elapsedMinutes = openedAtTs > 0 ? (updatedAt - openedAtTs) / 60 : 0;
+    const fastFailurePrice = entryPrice * (1 - normalizedSettings.fastFailureLossPercent / 100);
+    if (
+      tpStage === 0 &&
+      normalizedSettings.fastFailureMinutes > 0 &&
+      normalizedSettings.fastFailureLossPercent > 0 &&
+      elapsedMinutes >= normalizedSettings.fastFailureMinutes &&
+      currentPrice <= fastFailurePrice
+    ) {
+      const finalState = closeRemainingPosition({
+        chain: position.chain,
+        currentPrice,
+        remainingTokenAmount,
+        remainingCostBasisUsd,
+        realizedPnlUsd,
+        realizedProceedsUsd,
+      });
+      return buildClosedState({
+        currentPrice,
+        closePrice: finalState.executionPrice,
+        closeReason: `fast_failure_${normalizedSettings.fastFailureMinutes}m_${normalizedSettings.fastFailureLossPercent}`,
+        updatedAt,
+        updatedAtIso,
+        realizedPnlUsd: finalState.realizedPnlUsd,
+        realizedProceedsUsd: finalState.realizedProceedsUsd,
+        tpStage,
+        takeProfitSteps,
+        takeProfitPct: nextTakeProfitPct,
+        stopLossPct: stopLossPercent,
+        peakPrice,
+        peakPnlPct,
+        positionSizeUsd,
+      });
+    }
+
+    const slPrice = entryPrice * (1 - stopLossPercent / 100);
+    if (currentPrice <= slPrice + Math.abs(entryPrice) * 1e-12) {
+      const finalState = closeRemainingPosition({
+        chain: position.chain,
+        currentPrice,
+        remainingTokenAmount,
+        remainingCostBasisUsd,
+        realizedPnlUsd,
+        realizedProceedsUsd,
+      });
+      return buildClosedState({
+        currentPrice,
+        closePrice: finalState.executionPrice,
         closeReason: `stop_loss_${stopLossPercent}`,
         updatedAt,
         updatedAtIso,
@@ -241,9 +320,9 @@ export function createPaperPositionEngine({
       });
     }
 
-    const trailingState = getTrailingStopState(entryPrice, peakPrice, settings);
-    if (trailingState.active && currentPrice <= trailingState.stopPrice) {
+    if (shouldCloseForTimeStop(position, currentPrice, updatedAt, takeProfitSteps, normalizedSettings)) {
       const finalState = closeRemainingPosition({
+        chain: position.chain,
         currentPrice,
         remainingTokenAmount,
         remainingCostBasisUsd,
@@ -252,32 +331,8 @@ export function createPaperPositionEngine({
       });
       return buildClosedState({
         currentPrice,
-        closeReason: `trailing_stop_${settings.trailingStopPercent}`,
-        updatedAt,
-        updatedAtIso,
-        realizedPnlUsd: finalState.realizedPnlUsd,
-        realizedProceedsUsd: finalState.realizedProceedsUsd,
-        tpStage,
-        takeProfitSteps,
-        takeProfitPct: nextTakeProfitPct,
-        stopLossPct: stopLossPercent,
-        peakPrice,
-        peakPnlPct,
-        positionSizeUsd,
-      });
-    }
-
-    if (shouldCloseForTimeStop(position, currentPrice, updatedAt, takeProfitSteps, settings)) {
-      const finalState = closeRemainingPosition({
-        currentPrice,
-        remainingTokenAmount,
-        remainingCostBasisUsd,
-        realizedPnlUsd,
-        realizedProceedsUsd,
-      });
-      return buildClosedState({
-        currentPrice,
-        closeReason: `time_stop_${settings.timeStopHours}h`,
+        closePrice: finalState.executionPrice,
+        closeReason: `time_stop_${normalizedSettings.timeStopHours}h`,
         updatedAt,
         updatedAtIso,
         realizedPnlUsd: finalState.realizedPnlUsd,
@@ -312,15 +367,18 @@ export function createPaperPositionEngine({
   }
 
   function closeRemainingPosition({
+    chain,
     currentPrice,
     remainingTokenAmount,
     remainingCostBasisUsd,
     realizedPnlUsd,
     realizedProceedsUsd,
   }) {
-    const finalProceedsUsd = roundTo(mulBn(remainingTokenAmount, currentPrice), 6);
+    const execution = getSellExecution({ chain, quotedPrice: currentPrice, tokenAmount: remainingTokenAmount });
+    const finalProceedsUsd = roundTo(execution.netProceedsUsd, 6);
 
     return {
+      executionPrice: execution.effectivePrice,
       realizedProceedsUsd: roundTo(addBn(realizedProceedsUsd, finalProceedsUsd), 6),
       realizedPnlUsd: roundTo(
         addBn(realizedPnlUsd, subBn(finalProceedsUsd, remainingCostBasisUsd)),
@@ -329,8 +387,103 @@ export function createPaperPositionEngine({
     };
   }
 
+  function findTokenAmountForNetProceeds(chain, quotedPrice, maxTokenAmount, targetNetUsd) {
+    if (targetNetUsd <= 0 || maxTokenAmount <= 0) {
+      return 0;
+    }
+    const maxExecution = getSellExecution({ chain, quotedPrice, tokenAmount: maxTokenAmount });
+    if (maxExecution.netProceedsUsd <= targetNetUsd) {
+      return maxTokenAmount;
+    }
+
+    let low = 0;
+    let high = maxTokenAmount;
+    for (let index = 0; index < 40; index += 1) {
+      const middle = (low + high) / 2;
+      const execution = getSellExecution({ chain, quotedPrice, tokenAmount: middle });
+      if (execution.netProceedsUsd < targetNetUsd) {
+        low = middle;
+      } else {
+        high = middle;
+      }
+    }
+    return high;
+  }
+
+  function buildManualCloseState(
+    { position, currentPrice, updatedAt, takeProfitSteps, settings, closeReason },
+    { mode, updatedAtIso = null } = {}
+  ) {
+    const remainingTokenAmount = Number(
+      position.remaining_token_amount ??
+        position.remainingTokenAmount ??
+        position.token_amount ??
+        position.tokenAmount ??
+        0
+    );
+    const remainingCostBasisUsd = Number(
+      position.remaining_position_size_usd ??
+        position.remainingPositionSizeUsd ??
+        position.position_size_usd ??
+        position.positionSizeUsd ??
+        0
+    );
+    const realizedPnlUsd = Number(position.realized_pnl_usd ?? position.realizedPnlUsd ?? 0);
+    const realizedProceedsUsd = Number(
+      position.realized_proceeds_usd ?? position.realizedProceedsUsd ?? 0
+    );
+    const entryPrice = Number(position.entry_price ?? position.entryPrice ?? 0);
+    const positionSizeUsd = Number(position.position_size_usd ?? position.positionSizeUsd ?? 0);
+    const stopLossPct = Number(
+      position.stop_loss_pct ?? position.stopLossPct ?? settings.stopLossPercent
+    );
+    const tpStage = Number(position.tp_stage ?? position.tpStage ?? 0);
+    const nextTakeProfitPct =
+      takeProfitSteps[tpStage]?.targetPercent ||
+      takeProfitSteps[takeProfitSteps.length - 1]?.targetPercent ||
+      0;
+    const peakPrice = getPositionPeakPrice(position, currentPrice, entryPrice);
+    const tokenAmount = Number(position.token_amount ?? position.tokenAmount ?? 0);
+    const peakPnlPct =
+      positionSizeUsd > 0
+        ? roundTo(
+            mulBn(
+              divBn(subBn(mulBn(peakPrice, tokenAmount), positionSizeUsd), positionSizeUsd || 1),
+              100
+            ),
+            2
+          )
+        : 0;
+    const finalState = closeRemainingPosition({
+      chain: position.chain,
+      currentPrice,
+      remainingTokenAmount,
+      remainingCostBasisUsd,
+      realizedPnlUsd,
+      realizedProceedsUsd,
+    });
+
+    return buildClosedState({
+      currentPrice,
+      closePrice: finalState.executionPrice,
+      closeReason,
+      updatedAt,
+      updatedAtIso,
+      realizedPnlUsd: finalState.realizedPnlUsd,
+      realizedProceedsUsd: finalState.realizedProceedsUsd,
+      tpStage,
+      takeProfitSteps,
+      takeProfitPct: nextTakeProfitPct,
+      stopLossPct,
+      peakPrice,
+      peakPnlPct,
+      positionSizeUsd,
+    });
+  }
+
   function buildClosedState({
     currentPrice,
+    closePrice = currentPrice,
     closeReason,
     updatedAt,
     updatedAtIso,
@@ -348,7 +501,7 @@ export function createPaperPositionEngine({
     const shared = {
       status: 'closed',
       currentPrice,
-      closePrice: currentPrice,
+      closePrice,
       closeReason,
       pnlPct,
       remainingTokenAmount: 0,
@@ -381,6 +534,7 @@ export function createPaperPositionEngine({
   }
 
   return {
+    buildManualCloseState,
     calculateNextPositionState,
   };
 }

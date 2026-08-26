@@ -1,6 +1,6 @@
 # automated-trading-meme
 
-一个面向 `SOL Meme` 的 `Signal Worker + 纸上交易 + Next.js 看板` 项目。
+一个同时面向 `Solana / BNB Chain / Base Meme` 的 `Signal Worker + 纸上交易 + Next.js 看板` 项目。
 
 当前定位不是自动实盘，而是：
 
@@ -42,7 +42,7 @@ SQLite 或 PostgreSQL
 
 ## 核心能力
 
-- `SOL-only` 高频信号扫描
+- `Solana / BNB Chain / Base` 多链高频信号扫描
 - 连续走强动量识别
 - 交易评分与交易风控过滤
 - 纸上账户开仓、止盈、止损、时间退出、trailing 管理
@@ -84,7 +84,9 @@ TG_CHAT_ID=your_telegram_chat_id
 推荐最小配置：
 
 ```env
+PORT=3000
 SIGNAL_SCAN_INTERVAL=30
+SIGNAL_CHAINS=sol,bsc,base
 SIGNAL_DB_DRIVER=sqlite
 SIGNAL_DATA_DIR=.signal-scan-data
 ```
@@ -95,6 +97,8 @@ SIGNAL_DATA_DIR=.signal-scan-data
 - `.env.example` 只保留最小可运行配置
 - 高级交易参数默认使用内置值，需要时再按需补到 `.env`
 - 数据源优先通过 `SIGNAL_DB_DRIVER` 切换
+- `SIGNAL_CHAINS` 控制扫描链，支持 `sol,bsc,base`，默认同时启用三条链
+- `PORT` 控制 Web 服务端口，`npm run dev` 与 `npm start` 都会读取；也可使用别名 `SIGNAL_WEB_PORT`
 - 旧的 `RADAR_*` 环境变量仍兼容，但新部署建议统一使用 `SIGNAL_*`
 
 ### 3. 启动 Web 看板
@@ -103,7 +107,7 @@ SIGNAL_DATA_DIR=.signal-scan-data
 npm run dev
 ```
 
-打开 [http://localhost:3000](http://localhost:3000)。
+打开 `http://localhost:<PORT>`；默认是 [http://localhost:3000](http://localhost:3000)。
 
 ### 4. 启动扫描 Worker
 
@@ -211,7 +215,7 @@ npm run signal:once    # 只执行一轮扫描
 
 ## 当前策略摘要
 
-当前策略是偏短线的 `SOL Meme` 动量策略，大致规则如下：
+当前策略是偏短线的多链 Meme 动量策略，大致规则如下：
 
 - 最近多轮扫描持续走强后才进入信号阶段
 - 有信号不等于买入，还要通过交易评分和质量门槛
@@ -238,7 +242,7 @@ npm run signal:once    # 只执行一轮扫描
 
 ```mermaid
 flowchart TD
-    A[开始一轮扫描] --> B[拉取候选 SOL Meme 币]
+    A[开始一轮扫描] --> B[拉取 SOL / BNB / Base 候选 Meme 币]
     B --> C[基础过滤: 市值 流动性 噪音过滤]
     C --> D[记录最近几轮快照]
     D --> E{连续走强且累计涨幅达标?}

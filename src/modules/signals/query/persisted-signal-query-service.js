@@ -59,23 +59,21 @@ function getRuntimeInfo(startedAt) {
 
 function getDefaultPaperTradeSettings() {
   return {
-    stopLossPercent: toNumber(process.env.RADAR_PAPER_SL_PERCENT || process.env.SIGNAL_PAPER_SL_PERCENT, 50),
+    stopLossPercent: toNumber(process.env.RADAR_PAPER_SL_PERCENT || process.env.SIGNAL_PAPER_SL_PERCENT, 80),
     takeProfitSteps: normalizeTakeProfitSteps(
       parseTakeProfitStepsFromEnv(process.env.RADAR_PAPER_TP_STEPS || process.env.SIGNAL_PAPER_TP_STEPS) ||
         buildLegacyTakeProfitStepsFromEnv()
     ),
-    trailingStartPercent: toNumber(
-      process.env.RADAR_PAPER_TRAILING_START_PERCENT || process.env.SIGNAL_PAPER_TRAILING_START_PERCENT,
-      180
-    ),
-    trailingStopPercent: toNumber(
-      process.env.RADAR_PAPER_TRAILING_STOP_PERCENT || process.env.SIGNAL_PAPER_TRAILING_STOP_PERCENT,
-      35
-    ),
     timeStopHours: toNumber(
       process.env.RADAR_PAPER_TIME_STOP_HOURS || process.env.SIGNAL_PAPER_TIME_STOP_HOURS,
-      8
+      0
     ),
+    tp1ProtectionPercent: toNumber(
+      process.env.SIGNAL_PAPER_TP1_PROTECTION_PERCENT || process.env.RADAR_PAPER_TP1_PROTECTION_PERCENT,
+      0
+    ),
+    fastFailureMinutes: 0,
+    fastFailureLossPercent: 0,
   };
 }
 
@@ -479,7 +477,7 @@ export async function readPersistedSignalSnapshotFromDrizzle(limit = 60, options
       safeLimit
     );
     const paperSummary = buildPaperSummary(normalizedOpenPositions, normalizedClosedPositions);
-    const signalTimeline = buildSignalTimeline(alertRows, 1500);
+    const signalTimeline = buildSignalTimeline(alertRows, 300);
 
     return {
       ...snapshot,
@@ -511,8 +509,6 @@ export async function readPersistedSignalSnapshotFromDrizzle(limit = 60, options
         paperTradeSettings,
         paperTakeProfitSteps: paperTradeSettings.takeProfitSteps,
         paperStopLossPercent: paperTradeSettings.stopLossPercent,
-        paperTrailingStartPercent: paperTradeSettings.trailingStartPercent,
-        paperTrailingStopPercent: paperTradeSettings.trailingStopPercent,
         paperTimeStopHours: paperTradeSettings.timeStopHours,
       },
     };

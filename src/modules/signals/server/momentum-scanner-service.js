@@ -22,6 +22,7 @@ export function createMomentumScannerService({
   pushMinVolume,
   requireSocials,
   sleep,
+  chains,
 }) {
   function getPushQualityOptions() {
     return {
@@ -42,7 +43,8 @@ export function createMomentumScannerService({
   }
 
   function getMomentumState(token) {
-    const snapshots = momentumTracker.get(token.address) || [];
+    const tokenKey = `${token.chain}:${String(token.address || '').toLowerCase()}`;
+    const snapshots = momentumTracker.get(tokenKey) || [];
     const recent = snapshots.slice(-momentumConsecutiveUp);
     const rounds = recent.length;
 
@@ -80,8 +82,7 @@ export function createMomentumScannerService({
 
   async function fetchNewTokens() {
     const allTokens = [];
-    const seenAddrs = new Set();
-    const chains = ['sol'];
+    const seenTokens = new Set();
     const requestErrors = [];
 
     for (const chain of chains) {
@@ -103,14 +104,15 @@ export function createMomentumScannerService({
 
         for (const token of rank) {
           const mapped = mapToken(chain, token);
-          if (!mapped.address || seenAddrs.has(mapped.address)) {
+          const tokenKey = `${mapped.chain}:${String(mapped.address || '').toLowerCase()}`;
+          if (!mapped.address || seenTokens.has(tokenKey)) {
             continue;
           }
           if (mapped.mc < minMarketCap || mapped.liq < minLiquidity || mapped.mc > maxMarketCap) {
             continue;
           }
 
-          seenAddrs.add(mapped.address);
+          seenTokens.add(tokenKey);
           allTokens.push(mapped);
         }
 
@@ -131,11 +133,12 @@ export function createMomentumScannerService({
   async function trackMomentum(tokens) {
     const now = Date.now() / 1000;
     const alerts = [];
-    const currentAddrs = new Set();
+    const currentTokenKeys = new Set();
 
     for (const token of tokens) {
       const address = token.address;
-      currentAddrs.add(address);
+      const tokenKey = `${token.chain}:${String(address || '').toLowerCase()}`;
+      currentTokenKeys.add(tokenKey);
 
       if (token.mc < minMarketCap || token.liq < minLiquidity || token.mc > maxMarketCap) {
         continue;
@@ -144,14 +147,14 @@ export function createMomentumScannerService({
       const volume = token.volume || 0;
       const price = token.price || 0;
       const buys = token.buys_1h || token.buys || 0;
-      const snapshots = momentumTracker.get(address) || [];
+      const snapshots = momentumTracker.get(tokenKey) || [];
 
       if (
         snapshots.length > 0 &&
         snapshots[snapshots.length - 1].mc === token.mc &&
         snapshots[snapshots.length - 1].vol === volume
       ) {
-        momentumTracker.set(address, snapshots);
+        momentumTracker.set(tokenKey, snapshots);
         continue;
       }
 
@@ -166,7 +169,7 @@ export function createMomentumScannerService({
       if (snapshots.length > 20) {
         snapshots.splice(0, snapshots.length - 20);
       }
-      momentumTracker.set(address, snapshots);
+      momentumTracker.set(tokenKey, snapshots);
 
       if (snapshots.length < momentumConsecutiveUp) {
         continue;
@@ -207,7 +210,7 @@ export function createMomentumScannerService({
         continue;
       }
 
-      const pushInfo = momentumPushed.get(address) || {
+      const pushInfo = momentumPushed.get(tokenKey) || {
         count: 0,
         lastTs: 0,
         lastMc: 0,
@@ -237,7 +240,7 @@ export function createMomentumScannerService({
       pushInfo.count += 1;
       pushInfo.lastTs = now;
       pushInfo.lastMc = lastMc;
-      momentumPushed.set(address, pushInfo);
+      momentumPushed.set(tokenKey, pushInfo);
 
       const message = formatMomentumAlert(
         token,
@@ -268,15 +271,15 @@ export function createMomentumScannerService({
       );
     }
 
-    for (const [address, snapshots] of momentumTracker.entries()) {
-      if (!currentAddrs.has(address) && now - snapshots[snapshots.length - 1].ts > 600) {
-        momentumTracker.delete(address);
+    for (const [tokenKey, snapshots] of momentumTracker.entries()) {
+      if (!currentTokenKeys.has(tokenKey) && now - snapshots[snapshots.length - 1].ts > 600) {
+        momentumTracker.delete(tokenKey);
       }
     }
 
-    for (const [address, info] of momentumPushed.entries()) {
+    for (const [tokenKey, info] of momentumPushed.entries()) {
       if (now - info.lastTs > 3600) {
-        momentumPushed.delete(address);
+        momentumPushed.delete(tokenKey);
       }
     }
 

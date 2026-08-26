@@ -1,0 +1,10 @@
+.git
+.gitignore
+.next
+node_modules
+.signal-scan-data
+.radar-data
+*.log
+npm-debug.log*
+docs
+logs

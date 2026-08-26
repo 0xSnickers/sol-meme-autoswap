@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { APP_CONFIG } from '../../src/config/app-config.js';
 import { useSignalSnapshot } from '../../src/modules/signals/client/use-signal-snapshot.js';
+import { useSignalStream } from '../../src/modules/signals/client/use-signal-stream.js';
 import {
   formatCompactTime,
   formatMoney,
@@ -15,7 +16,8 @@ import AppHeader from '../components/AppHeader';
 import LoadingBlock from '../components/LoadingBlock';
 import TokenSignalTimeline, { ScoreWithTooltip } from '../components/TokenSignalTimeline';
 import VirtualListTable from '../components/VirtualListTable';
-import { AddressCopy, ExternalLinks, TokenAvatar } from '../components/token-ui';
+import { AddressCopy, ChainBadge, ExternalLinks, TokenAvatar } from '../components/token-ui';
+import { CHAIN_OPTIONS, getSelectedChainLabel, useSelectedChain } from '../components/useSelectedChain';
 
 const REFRESH_SECONDS = APP_CONFIG.signals.pollSeconds;
 const SIGNAL_ROW_HEIGHT = APP_CONFIG.ui.signalRowHeight;
@@ -73,18 +75,37 @@ function SortButton({ label, active, direction, onClick }) {
 }
 
 export default function SignalsPage() {
+  const [selectedChain, setSelectedChain] = useSelectedChain();
+  const [pollFallbackEnabled, setPollFallbackEnabled] = useState(false);
   const [sortKey, setSortKey] = useState('latestPushedAt');
   const [sortDirection, setSortDirection] = useState('desc');
   const [query, setQuery] = useState('');
   const [copiedKey, setCopiedKey] = useState('');
-  const { data, loading, error, countdown, headerMeta } = useSignalSnapshot({
+  const {
+    data,
+    loading,
+    error,
+    headerMeta,
+    refresh,
+    applySnapshot,
+  } = useSignalSnapshot({
     limit: 120,
     pollSeconds: REFRESH_SECONDS,
     errorMessage: '读取信号统计失败',
+    pollEnabled: pollFallbackEnabled,
+  });
+  const { connected: streamConnected } = useSignalStream({
+    limit: 120,
+    onSnapshot: (json) => applySnapshot(json, { resetCountdown: false }),
+    onFallbackChange: setPollFallbackEnabled,
   });
 
-  const alerts = data?.alerts || [];
-  const latestSignal = data?.latestSignal || alerts[0] || null;
+  const alerts = useMemo(
+    () => (data?.alerts || []).filter((alert) => alert.chain === selectedChain),
+    [data?.alerts, selectedChain]
+  );
+  const latestSignal = alerts[0] || null;
+  const selectedChainLabel = getSelectedChainLabel(selectedChain);
   const sortedAlerts = useMemo(() => {
     const rows = [...alerts];
     rows.sort((left, right) => {
@@ -175,11 +196,17 @@ export default function SignalsPage() {
         title="信号统计"
         navKey="intel"
         statusCards={[
-          { label: '网络', value: 'Solana', iconSrc: '/chains/solana.jpg', iconAlt: 'Solana' },
+          {
+            label: '网络', value: selectedChain, iconSrc: CHAIN_OPTIONS[0].iconSrc, iconAlt: '网络', options: CHAIN_OPTIONS,
+            onChange: (chain) => { setSelectedChain(chain); refresh(); },
+          },
           { label: '策略运行', value: headerMeta.strategyRuntimeLabel || '--' },
           { label: '启动时间', value: headerMeta.strategyStartedAt ? formatTime(headerMeta.strategyStartedAt) : '--' },
-          { label: '实时状态', value: loading ? '连接中' : '已连接', tone: loading ? 'warning' : 'positive' },
-          { label: '实时更新', value: { seconds: countdown, total: REFRESH_SECONDS } },
+          {
+            label: '实时状态',
+            value: streamConnected ? '已连接' : '连接中',
+            tone: streamConnected ? 'positive' : 'warning',
+          },
         ]}
       />
 
@@ -279,12 +306,19 @@ export default function SignalsPage() {
 
         {loading ? (
           <div className="list-loading-wrap">
-            <LoadingBlock title="Loading" description="正在加载信号列表..." />
+            <LoadingBlock
+              title={data ? '正在刷新' : '正在加载'}
+              description={data ? '正在同步当前网络的最新信号...' : '正在加载信号列表...'}
+              compact={Boolean(data)}
+            />
           </div>
         ) : null}
-        {error ? <div className="error-state">{error}</div> : null}
+        {error ? <div className="error-state" role="alert">{error}</div> : null}
         {!loading && !error && filteredAlerts.length === 0 ? (
-          <div className="empty-state">当前还没有可统计的推送信号。</div>
+          <div className="empty-state">
+            {selectedChainLabel} 暂无可统计的推送记录
+            {data?.scannedAt ? `，全部网络最近扫描于 ${formatTime(data.scannedAt)}` : '，扫描服务尚未产生数据'}。
+          </div>
         ) : null}
 
         {filteredAlerts.length > 0 ? (
@@ -316,6 +350,7 @@ export default function SignalsPage() {
                       <strong>{alert.name}</strong>
                     </div>
                     <p>{alert.symbol}</p>
+                    <ChainBadge chain={alert.chain} />
                     <AddressCopy
                       address={alert.address}
                       copyId={copyId}
@@ -325,6 +360,7 @@ export default function SignalsPage() {
                     <div className="links-wrap compact-links">
                       <ExternalLinks
                         address={alert.address}
+                        chain={alert.chain}
                         twitter={alert.twitter}
                         xOnly
                       />

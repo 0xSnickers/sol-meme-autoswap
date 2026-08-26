@@ -153,25 +153,17 @@ export function useSignalSnapshot({
   limit = APP_CONFIG.signals.snapshotLimit,
   pollSeconds = APP_CONFIG.signals.pollSeconds,
   enabled = true,
+  pollEnabled = true,
   errorMessage = '读取信号快照失败',
   onSnapshot,
 } = {}) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [countdown, setCountdown] = useState(pollSeconds);
+  const [refreshToken, setRefreshToken] = useState(0);
   const [headerMeta, setHeaderMeta] = useState(INITIAL_HEADER_META);
   const dataRef = useRef(null);
   const nextPollAtRef = useRef(0);
-
-  const syncCountdown = useCallback(() => {
-    if (!nextPollAtRef.current) {
-      return;
-    }
-
-    const remainingSeconds = Math.max(0, Math.ceil((nextPollAtRef.current - Date.now()) / 1000));
-    setCountdown(remainingSeconds);
-  }, []);
 
   const applySnapshot = useCallback(
     (json, { resetCountdown = true } = {}) => {
@@ -188,12 +180,16 @@ export function useSignalSnapshot({
       setLoading(false);
       if (resetCountdown) {
         nextPollAtRef.current = Date.now() + pollSeconds * 1000;
-        syncCountdown();
       }
       onSnapshot?.(mergedSnapshot);
     },
-    [onSnapshot, pollSeconds, syncCountdown]
+    [onSnapshot, pollSeconds]
   );
+
+  const refresh = useCallback(() => {
+    setLoading(true);
+    setRefreshToken((current) => current + 1);
+  }, []);
 
   useEffect(() => {
     if (!enabled) {
@@ -212,8 +208,10 @@ export function useSignalSnapshot({
 
     function scheduleNextLoad() {
       clearPollTimer();
+      if (!pollEnabled) {
+        return;
+      }
       nextPollAtRef.current = Date.now() + pollSeconds * 1000;
-      syncCountdown();
       pollTimer = window.setTimeout(() => {
         void load('persisted');
       }, pollSeconds * 1000);
@@ -224,7 +222,7 @@ export function useSignalSnapshot({
         setError('');
         const json = await fetchSignalSnapshot({ limit, mode });
         if (!disposed) {
-          applySnapshot(json, { resetCountdown: false });
+          applySnapshot(json, { resetCountdown: true });
           scheduleNextLoad();
         }
       } catch (requestError) {
@@ -236,29 +234,24 @@ export function useSignalSnapshot({
       }
     }
 
-    void load('realtime');
-    const countdownTimer = window.setInterval(() => {
-      syncCountdown();
-    }, 1000);
-
+    void load('persisted');
     return () => {
       disposed = true;
       nextPollAtRef.current = 0;
       clearPollTimer();
-      window.clearInterval(countdownTimer);
     };
-  }, [applySnapshot, enabled, errorMessage, limit, pollSeconds, syncCountdown]);
+  }, [applySnapshot, enabled, errorMessage, limit, pollEnabled, pollSeconds, refreshToken]);
 
   return {
     data,
     error,
     loading,
-    countdown,
     headerMeta,
     setData,
     setError,
     setLoading,
     setHeaderMeta,
     applySnapshot,
+    refresh,
   };
 }

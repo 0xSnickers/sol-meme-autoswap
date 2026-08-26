@@ -17,6 +17,7 @@ export function createScannerBootstrapService({
   sleep,
   tgSend,
   tradeRules,
+  chains = [],
 }) {
   async function runMain(argv = process.argv) {
     await ensureStrategySessionMeta(null, { reset: true });
@@ -27,7 +28,7 @@ export function createScannerBootstrapService({
     log(`扫描间隔: ${scanInterval}s`);
     log('推送逻辑: 动量优先 — 连涨才推，叙事只做分类标签');
     log(
-      `核心规则: 30秒仅扫描SOL，连涨3轮且涨幅>=5%，聪明钱>=${minSmartDegenCount}，流动性>=${pushMinLiquidity}，持有人>=${pushMinHolders}，1h量>=${pushMinVolume}，买卖比>=${pushMinBuySellRatio}`
+      `核心规则: ${scanInterval}秒扫描${chains.join(' / ')}，连涨3轮且涨幅>=5%，聪明钱>=${minSmartDegenCount}，流动性>=${pushMinLiquidity}，持有人>=${pushMinHolders}，1h量>=${pushMinVolume}，买卖比>=${pushMinBuySellRatio}`
     );
     log(
       `交易风控: score>=${tradeRules.scoreThreshold}，仅第1次信号，最多${paperMaxOpenPositions}个持仓，资金使用率<=${paperMaxCapitalUsagePct}%，基础仓位${paperBasePositionUsd} USD，${formatPaperTradePolicyLabel(startupTradeSettings)}`
@@ -38,7 +39,7 @@ export function createScannerBootstrapService({
       '链上雷达 Node.js 版已启动\n\n' +
         '核心逻辑: 动量优先\n' +
         `连涨3轮+涨幅>=5%且聪明钱>=${minSmartDegenCount}才推送\n` +
-        '扫描范围: 仅SOL\n' +
+        `扫描范围: ${chains.join(' / ')}\n` +
         `质量门槛: 流动性>=${pushMinLiquidity} | 持有人>=${pushMinHolders} | 1h量>=${pushMinVolume} | 买卖比>=${pushMinBuySellRatio}\n` +
         `交易风控: score>=${tradeRules.scoreThreshold} | 仅第1次信号 | 最多${paperMaxOpenPositions}仓 | 资金使用率<=${paperMaxCapitalUsagePct}% | 基础仓位${paperBasePositionUsd} USD | ${formatPaperTradePolicyLabel(startupTradeSettings)}\n` +
         `社交要求: ${requireSocials ? '至少有1个社交/官网链接' : '关闭'}\n` +

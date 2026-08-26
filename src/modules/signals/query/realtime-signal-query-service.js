@@ -5,6 +5,7 @@ import { resolveSignalDbDriver } from '../../../shared/db/client/index.js';
 import { gmgnGet as gmgnGetBase, mapGmgnToken } from '../server/gmgn-client.js';
 import { createLivePriceSnapshotService } from '../server/live-price-snapshot-service.js';
 import { createGmgnHeaders } from '../server/scanner-runtime.js';
+import { getConfiguredSignalChains, getSignalChainKey } from '../lib/chain-config.js';
 import { readPersistedSignalSnapshotFromDrizzle } from './persisted-signal-query-service.js';
 
 let cachedRealtimeSignalQueryService = null;
@@ -36,8 +37,8 @@ function createRealtimeFetchNewTokens({ env = process.env, fetchJson }) {
 
   return async function fetchNewTokens() {
     const allTokens = [];
-    const seenAddrs = new Set();
-    const chains = ['sol'];
+    const seenTokens = new Set();
+    const chains = getConfiguredSignalChains(env);
 
     for (const chain of chains) {
       const urls = [
@@ -56,7 +57,8 @@ function createRealtimeFetchNewTokens({ env = process.env, fetchJson }) {
         const rank = Array.isArray(data.rank) ? data.rank : [];
         for (const token of rank) {
           const mapped = mapGmgnToken(chain, token);
-          if (!mapped.address || seenAddrs.has(mapped.address)) {
+          const tokenKey = getSignalChainKey(mapped.chain, mapped.address);
+          if (!mapped.address || seenTokens.has(tokenKey)) {
             continue;
           }
           if (
@@ -67,7 +69,7 @@ function createRealtimeFetchNewTokens({ env = process.env, fetchJson }) {
             continue;
           }
 
-          seenAddrs.add(mapped.address);
+          seenTokens.add(tokenKey);
           allTokens.push(mapped);
         }
 

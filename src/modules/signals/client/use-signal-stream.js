@@ -9,15 +9,20 @@ export function useSignalStream({
   enabled = true,
   onSnapshot,
   onInvalidSnapshot,
+  onFallbackChange,
 } = {}) {
   const [connected, setConnected] = useState(false);
+  const [fallbackActive, setFallbackActive] = useState(false);
   const onSnapshotRef = useRef(onSnapshot);
   const onInvalidSnapshotRef = useRef(onInvalidSnapshot);
+  const onFallbackChangeRef = useRef(onFallbackChange);
+  const lastSnapshotAtRef = useRef(Date.now());
 
   useEffect(() => {
     onSnapshotRef.current = onSnapshot;
     onInvalidSnapshotRef.current = onInvalidSnapshot;
-  }, [onInvalidSnapshot, onSnapshot]);
+    onFallbackChangeRef.current = onFallbackChange;
+  }, [onFallbackChange, onInvalidSnapshot, onSnapshot]);
 
   useEffect(() => {
     if (!enabled) {
@@ -25,6 +30,7 @@ export function useSignalStream({
     }
 
     let disposed = false;
+    lastSnapshotAtRef.current = Date.now();
     setConnected(false);
     const source = new EventSource(buildSignalStreamUrl(limit));
 
@@ -41,8 +47,11 @@ export function useSignalStream({
 
       try {
         const json = JSON.parse(event.data);
+        lastSnapshotAtRef.current = Date.now();
         onSnapshotRef.current?.(json);
         setConnected(true);
+        setFallbackActive(false);
+        onFallbackChangeRef.current?.(false);
       } catch (error) {
         setConnected(false);
         onInvalidSnapshotRef.current?.(error);
@@ -55,17 +64,38 @@ export function useSignalStream({
       }
     });
 
+    source.addEventListener('refresh-cycle', () => {
+      if (disposed) {
+        return;
+      }
+      lastSnapshotAtRef.current = Date.now();
+      setConnected(true);
+      setFallbackActive(false);
+      onFallbackChangeRef.current?.(false);
+    });
+
     source.onerror = () => {
       if (!disposed) {
         setConnected(false);
       }
     };
 
+    const watchdogTimer = window.setInterval(() => {
+      if (disposed) {
+        return;
+      }
+      const shouldFallback =
+        Date.now() - lastSnapshotAtRef.current >= APP_CONFIG.signals.streamFallbackMs;
+      setFallbackActive(shouldFallback);
+      onFallbackChangeRef.current?.(shouldFallback);
+    }, 5_000);
+
     return () => {
       disposed = true;
+      window.clearInterval(watchdogTimer);
       source.close();
     };
   }, [enabled, limit]);
 
-  return { connected };
+  return { connected, fallbackActive };
 }

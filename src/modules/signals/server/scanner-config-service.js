@@ -13,8 +13,6 @@ export function createScannerConfigService({
         defaultScanConfig.paperTakeProfitPercent,
       paperTakeProfitSteps: paperTradeSettings.takeProfitSteps,
       paperStopLossPercent: paperTradeSettings.stopLossPercent,
-      paperTrailingStartPercent: paperTradeSettings.trailingStartPercent,
-      paperTrailingStopPercent: paperTradeSettings.trailingStopPercent,
       paperTimeStopHours: paperTradeSettings.timeStopHours,
       paperPolicyLabel: formatPaperTradePolicyLabel(paperTradeSettings),
       paperTradeSettings,

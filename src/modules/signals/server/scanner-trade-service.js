@@ -10,23 +10,26 @@ export function createScannerTradeService({
   paperTotalCapitalUsd,
   roundTo,
   rules,
+  resolveRules = null,
   subBn,
   sumBn,
 }) {
   function getTradeScore(alert) {
+    const alertRules = resolveRules?.(alert?.token?.chain) || rules;
     return getTradeScoreWithRules(alert, {
       getBuySellMetrics,
       roundTo,
-      rules,
+      rules: alertRules,
     });
   }
 
   function evaluateTradeIntent(alert, options = {}) {
+    const alertRules = resolveRules?.(alert?.token?.chain) || rules;
     return evaluateTradeIntentWithRules(alert, {
       ...options,
       getBuySellMetrics,
       roundTo,
-      rules,
+      rules: alertRules,
     });
   }
 

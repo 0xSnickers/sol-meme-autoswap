@@ -21,24 +21,28 @@ function getDefaultPaperTradeSettings(env = process.env) {
   return {
     stopLossPercent: toNumber(
       env.RADAR_PAPER_SL_PERCENT || env.SIGNAL_PAPER_SL_PERCENT,
-      50
+      80
     ),
     takeProfitSteps: normalizeTakeProfitSteps(
       parseTakeProfitStepsFromEnv(
         env.RADAR_PAPER_TP_STEPS || env.SIGNAL_PAPER_TP_STEPS
       ) || buildLegacyTakeProfitStepsFromEnv(env)
     ),
-    trailingStartPercent: toNumber(
-      env.RADAR_PAPER_TRAILING_START_PERCENT || env.SIGNAL_PAPER_TRAILING_START_PERCENT,
-      180
-    ),
-    trailingStopPercent: toNumber(
-      env.RADAR_PAPER_TRAILING_STOP_PERCENT || env.SIGNAL_PAPER_TRAILING_STOP_PERCENT,
-      35
-    ),
     timeStopHours: toNumber(
       env.RADAR_PAPER_TIME_STOP_HOURS || env.SIGNAL_PAPER_TIME_STOP_HOURS,
-      8
+      0
+    ),
+    tp1ProtectionPercent: toNumber(
+      env.SIGNAL_PAPER_TP1_PROTECTION_PERCENT || env.RADAR_PAPER_TP1_PROTECTION_PERCENT,
+      5
+    ),
+    fastFailureMinutes: toNumber(
+      env.SIGNAL_PAPER_FAST_FAILURE_MINUTES || env.RADAR_PAPER_FAST_FAILURE_MINUTES,
+      0
+    ),
+    fastFailureLossPercent: toNumber(
+      env.SIGNAL_PAPER_FAST_FAILURE_LOSS_PERCENT || env.RADAR_PAPER_FAST_FAILURE_LOSS_PERCENT,
+      0
     ),
   };
 }
@@ -50,26 +54,30 @@ function normalizePaperTradeSettings(input = {}, env = process.env) {
     80
   );
   const stopLossPercent = Number(input.stopLossPercent ?? fallback.stopLossPercent);
-  const trailingStartPercent = Number(
-    input.trailingStartPercent ?? fallback.trailingStartPercent
-  );
-  const trailingStopPercent = Number(input.trailingStopPercent ?? fallback.trailingStopPercent);
   const timeStopHours = Number(input.timeStopHours ?? fallback.timeStopHours);
+  const tp1ProtectionPercent = Number(input.tp1ProtectionPercent ?? fallback.tp1ProtectionPercent);
+  const fastFailureMinutes = Number(input.fastFailureMinutes ?? fallback.fastFailureMinutes);
+  const fastFailureLossPercent = Number(
+    input.fastFailureLossPercent ?? fallback.fastFailureLossPercent
+  );
 
   return {
     stopLossPercent: Number.isFinite(stopLossPercent)
       ? Math.max(5, Math.min(maxPaperStopLossPercent, roundTo(stopLossPercent, 2)))
       : fallback.stopLossPercent,
     takeProfitSteps: normalizeTakeProfitSteps(input.takeProfitSteps || fallback.takeProfitSteps),
-    trailingStartPercent: Number.isFinite(trailingStartPercent)
-      ? Math.max(10, Math.min(300, roundTo(trailingStartPercent, 2)))
-      : fallback.trailingStartPercent,
-    trailingStopPercent: Number.isFinite(trailingStopPercent)
-      ? Math.max(5, Math.min(80, roundTo(trailingStopPercent, 2)))
-      : fallback.trailingStopPercent,
     timeStopHours: Number.isFinite(timeStopHours)
-      ? Math.max(1, Math.min(168, roundTo(timeStopHours, 2)))
+      ? Math.max(0, Math.min(168, roundTo(timeStopHours, 2)))
       : fallback.timeStopHours,
+    tp1ProtectionPercent: Number.isFinite(tp1ProtectionPercent)
+      ? Math.max(0, Math.min(50, roundTo(tp1ProtectionPercent, 2)))
+      : fallback.tp1ProtectionPercent,
+    fastFailureMinutes: Number.isFinite(fastFailureMinutes)
+      ? Math.max(0, Math.min(240, roundTo(fastFailureMinutes, 0)))
+      : fallback.fastFailureMinutes,
+    fastFailureLossPercent: Number.isFinite(fastFailureLossPercent)
+      ? Math.max(0, Math.min(50, roundTo(fastFailureLossPercent, 2)))
+      : fallback.fastFailureLossPercent,
   };
 }
 

@@ -1,11 +1,12 @@
 export const APP_CONFIG = {
   signals: {
-    snapshotLimit: 200,
+    snapshotLimit: 80,
     minSnapshotLimit: 10,
     maxSnapshotLimit: 120,
     pollSeconds: 30,
-    streamIntervalMs: 5_000,
+    streamIntervalMs: 30_000,
     heartbeatIntervalMs: 15_000,
+    streamFallbackMs: 45_000,
   },
   ui: {
     alertRowHeight: 214,

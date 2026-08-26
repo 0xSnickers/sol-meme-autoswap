@@ -3,6 +3,7 @@ import {
   getPersistedSignalSnapshot,
   getRealtimeSignalSnapshot,
   getStoredPaperTradeSettings,
+  manuallyCloseStoredPaperPositions,
   updateStoredPaperTradeSettings,
 } from '../../../signal-scanner.js';
 import {
@@ -57,4 +58,8 @@ export async function savePaperTradeSettings(payload) {
   return updateStoredPaperTradeSettings(payload, {
     applyToOpenPositions: Boolean(payload?.applyToOpenPositions),
   });
+}
+
+export async function closePaperPositions(payload) {
+  return manuallyCloseStoredPaperPositions(payload);
 }

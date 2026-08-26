@@ -3,9 +3,10 @@ import { normalizeTakeProfitSteps } from '../lib/paper-trade-settings.js';
 export function createPaperTradeSettingsService({
   defaultPaperStopLossPercent,
   defaultPaperTakeProfitSteps,
-  defaultPaperTrailingStartPercent,
-  defaultPaperTrailingStopPercent,
   defaultPaperTimeStopHours,
+  defaultPaperTp1ProtectionPercent,
+  defaultPaperFastFailureMinutes,
+  defaultPaperFastFailureLossPercent,
   maxPaperStopLossPercent,
   legacyPaperTakeProfitPercent,
   roundTo,
@@ -16,34 +17,39 @@ export function createPaperTradeSettingsService({
     const fallback = {
       stopLossPercent: defaultPaperStopLossPercent,
       takeProfitSteps: defaultPaperTakeProfitSteps,
-      trailingStartPercent: defaultPaperTrailingStartPercent,
-      trailingStopPercent: defaultPaperTrailingStopPercent,
       timeStopHours: defaultPaperTimeStopHours,
+      tp1ProtectionPercent: defaultPaperTp1ProtectionPercent,
+      fastFailureMinutes: defaultPaperFastFailureMinutes,
+      fastFailureLossPercent: defaultPaperFastFailureLossPercent,
     };
 
     const stopLossPercent = Number(input.stopLossPercent ?? fallback.stopLossPercent);
-    const trailingStartPercent = Number(
-      input.trailingStartPercent ?? fallback.trailingStartPercent
-    );
-    const trailingStopPercent = Number(
-      input.trailingStopPercent ?? fallback.trailingStopPercent
-    );
     const timeStopHours = Number(input.timeStopHours ?? fallback.timeStopHours);
+    const tp1ProtectionPercent = Number(
+      input.tp1ProtectionPercent ?? fallback.tp1ProtectionPercent
+    );
+    const fastFailureMinutes = Number(input.fastFailureMinutes ?? fallback.fastFailureMinutes);
+    const fastFailureLossPercent = Number(
+      input.fastFailureLossPercent ?? fallback.fastFailureLossPercent
+    );
 
     return {
       stopLossPercent: Number.isFinite(stopLossPercent)
         ? Math.max(5, Math.min(maxPaperStopLossPercent, roundTo(stopLossPercent, 2)))
         : fallback.stopLossPercent,
       takeProfitSteps: normalizeTakeProfitSteps(input.takeProfitSteps || fallback.takeProfitSteps),
-      trailingStartPercent: Number.isFinite(trailingStartPercent)
-        ? Math.max(10, Math.min(300, roundTo(trailingStartPercent, 2)))
-        : fallback.trailingStartPercent,
-      trailingStopPercent: Number.isFinite(trailingStopPercent)
-        ? Math.max(5, Math.min(80, roundTo(trailingStopPercent, 2)))
-        : fallback.trailingStopPercent,
       timeStopHours: Number.isFinite(timeStopHours)
-        ? Math.max(1, Math.min(168, roundTo(timeStopHours, 2)))
+        ? Math.max(0, Math.min(168, roundTo(timeStopHours, 2)))
         : fallback.timeStopHours,
+      tp1ProtectionPercent: Number.isFinite(tp1ProtectionPercent)
+        ? Math.max(0, Math.min(50, roundTo(tp1ProtectionPercent, 2)))
+        : fallback.tp1ProtectionPercent,
+      fastFailureMinutes: Number.isFinite(fastFailureMinutes)
+        ? Math.max(0, Math.min(240, roundTo(fastFailureMinutes, 0)))
+        : fallback.fastFailureMinutes,
+      fastFailureLossPercent: Number.isFinite(fastFailureLossPercent)
+        ? Math.max(0, Math.min(50, roundTo(fastFailureLossPercent, 2)))
+        : fallback.fastFailureLossPercent,
     };
   }
 
@@ -56,9 +62,12 @@ export function createPaperTradeSettingsService({
     return [
       `分批止盈 ${formatTakeProfitStepsLabel(normalized.takeProfitSteps)}`,
       `止损 -${normalized.stopLossPercent}%`,
-      `${normalized.timeStopHours}h 未到 TP1 全平`,
-      `+${normalized.trailingStartPercent}% 启动 trailing / 回撤 ${normalized.trailingStopPercent}%`,
-    ].join(' | ');
+      `TP1 后回落至 +${normalized.tp1ProtectionPercent}% 全平`,
+      normalized.timeStopHours > 0 ? `${normalized.timeStopHours}h 未到 TP1 全平` : null,
+      normalized.fastFailureMinutes > 0
+        ? `${normalized.fastFailureMinutes}m 后跌至 -${normalized.fastFailureLossPercent}% 快速退出`
+        : null,
+    ].filter(Boolean).join(' | ');
   }
 
   function getPaperTradeSettings(db) {

@@ -3,25 +3,31 @@ export function normalizeTakeProfitSteps(steps = [], roundTo = defaultRoundTo) {
     .map((step) => ({
       targetPercent: Number(step?.targetPercent ?? step?.pct ?? 0),
       sellPercent: Number(step?.sellPercent ?? step?.portion ?? 0),
+      sellMode: ['recover_principal', 'remaining_percent'].includes(step?.sellMode)
+        ? step.sellMode
+        : 'initial_percent',
     }))
     .filter((step) => Number.isFinite(step.targetPercent) && Number.isFinite(step.sellPercent))
     .map((step) => ({
       targetPercent: Math.max(1, roundTo(step.targetPercent, 2)),
       sellPercent: Math.max(1, Math.min(100, roundTo(step.sellPercent, 2))),
+      sellMode: step.sellMode,
     }))
     .sort((left, right) => left.targetPercent - right.targetPercent);
 
   if (!normalized.length) {
     return [
-      { targetPercent: 25, sellPercent: 55 },
-      { targetPercent: 60, sellPercent: 25 },
-      { targetPercent: 120, sellPercent: 20 },
+      { targetPercent: 80, sellPercent: 55.56, sellMode: 'recover_principal' },
+      { targetPercent: 150, sellPercent: 50, sellMode: 'remaining_percent' },
     ];
   }
 
   let runningSellPercent = 0;
   return normalized
     .map((step) => {
+      if (step.sellMode !== 'initial_percent') {
+        return step;
+      }
       const remaining = Math.max(0, 100 - runningSellPercent);
       if (remaining <= 0) {
         return null;
@@ -31,6 +37,7 @@ export function normalizeTakeProfitSteps(steps = [], roundTo = defaultRoundTo) {
       return {
         targetPercent: step.targetPercent,
         sellPercent: cappedSellPercent,
+        sellMode: step.sellMode,
       };
     })
     .filter(Boolean);
@@ -72,9 +79,8 @@ export function buildLegacyTakeProfitStepsFromEnv(env = process.env) {
 
   if (!hasLegacyConfig) {
     return [
-      { targetPercent: 80, sellPercent: 55 },
-      { targetPercent: 150, sellPercent: 25 },
-      { targetPercent: 260, sellPercent: 20 },
+      { targetPercent: 80, sellPercent: 55.56, sellMode: 'recover_principal' },
+      { targetPercent: 150, sellPercent: 50, sellMode: 'remaining_percent' },
     ];
   }
 

@@ -20,6 +20,8 @@ export function createPaperPositionLifecycleService({
   roundTo,
   subBn,
   fetchTrackedLivePrices = null,
+  getBuyExecution,
+  getSellExecution,
 }) {
   const {
     getPaperEntrySizing,
@@ -40,12 +42,13 @@ export function createPaperPositionLifecycleService({
     subBn,
   });
 
-  const { calculateNextPositionState } = createPaperPositionEngine({
+  const { buildManualCloseState, calculateNextPositionState } = createPaperPositionEngine({
     addBn,
     divBn,
     getOpenPositionMarkToMarketState,
     mulBn,
     normalizePaperTradeSettings,
+    getSellExecution,
     roundTo,
     subBn,
   });
@@ -84,7 +87,16 @@ export function createPaperPositionLifecycleService({
     const settings = options.settings || getPaperTradeSettings(db);
     const finalSizing = sizing || getPaperEntrySizing(alert, tradePlan);
     const takeProfitSteps = normalizeTakeProfitSteps(settings.takeProfitSteps);
-    const entryPrice = Number(alert.token.price || 0);
+    const quotedEntryPrice = Number(alert.token.price || 0);
+    const buyExecution = getBuyExecution({
+      chain: alert.token.chain,
+      quotedPrice: quotedEntryPrice,
+      totalCostUsd: finalSizing.positionSizeUsd,
+    });
+    const tokenAmount = roundTo(buyExecution.tokenAmount, 6);
+    const entryPrice = tokenAmount > 0
+      ? roundTo(divBn(finalSizing.positionSizeUsd, tokenAmount), 8)
+      : quotedEntryPrice;
 
     if (repos) {
       await repos.positions.insertMany([
@@ -98,8 +110,8 @@ export function createPaperPositionLifecycleService({
           tradeScore: tradePlan.tradeScore,
           positionSizeUsd: finalSizing.positionSizeUsd,
           targetPositionSizeUsd: finalSizing.targetPositionSizeUsd,
-          tokenAmount: finalSizing.tokenAmount,
-          remainingTokenAmount: finalSizing.tokenAmount,
+          tokenAmount,
+          remainingTokenAmount: tokenAmount,
           remainingPositionSizeUsd: finalSizing.positionSizeUsd,
           realizedPnlUsd: 0,
           realizedProceedsUsd: 0,
@@ -144,8 +156,8 @@ export function createPaperPositionLifecycleService({
       tradePlan.tradeScore,
       finalSizing.positionSizeUsd,
       finalSizing.targetPositionSizeUsd,
-      finalSizing.tokenAmount,
-      finalSizing.tokenAmount,
+      tokenAmount,
+      tokenAmount,
       finalSizing.positionSizeUsd,
       0,
       0,
@@ -170,7 +182,12 @@ export function createPaperPositionLifecycleService({
 
   async function scaleIntoPaperPosition(db, position, alert, tradePlan, createdAt, sizing, options = {}) {
     const addPositionUsd = Number(sizing?.positionSizeUsd || 0);
-    const addTokenAmount = Number(sizing?.tokenAmount || 0);
+    const buyExecution = getBuyExecution({
+      chain: alert.token.chain,
+      quotedPrice: alert.token.price,
+      totalCostUsd: addPositionUsd,
+    });
+    const addTokenAmount = roundTo(buyExecution.tokenAmount, 6);
     if (addPositionUsd <= 0 || addTokenAmount <= 0) {
       return;
     }
@@ -269,6 +286,130 @@ export function createPaperPositionLifecycleService({
     );
   }
 
+
+  async function manuallyClosePaperPositions(db, input = {}, options = {}) {
+    const repos = options.repositories;
+    const settings = options.settings || getPaperTradeSettings(db);
+    const updatedAt = options.updatedAt || Math.floor(Date.now() / 1000);
+    const ids = Array.isArray(input.positionIds)
+      ? input.positionIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+      : [];
+    const closeAll = Boolean(input.closeAll);
+    const reason = closeAll ? 'manual_close_all' : 'manual_close';
+
+    const openPositions = repos
+      ? await repos.positions.listByStatus('open', 0)
+      : db.prepare('SELECT * FROM paper_positions WHERE status = ? ORDER BY opened_at DESC').all('open');
+
+    if (!openPositions.length) {
+      throw new Error('当前没有可平仓的持仓');
+    }
+
+    const targetPositions = closeAll
+      ? openPositions
+      : openPositions.filter((position) => ids.includes(Number(position.id)));
+
+    if (!targetPositions.length) {
+      throw new Error('目标持仓不存在或已平仓');
+    }
+
+    if (targetPositions.length !== (closeAll ? openPositions.length : ids.length)) {
+      throw new Error('部分目标持仓不存在或已平仓');
+    }
+
+    if (!fetchTrackedLivePrices) {
+      throw new Error('实时价格服务不可用，暂时无法手动平仓');
+    }
+
+    const trackedTokens = targetPositions.map((position) => ({
+      chain: position.chain,
+      address: position.address,
+    }));
+    const livePriceMap = await fetchTrackedLivePrices(trackedTokens);
+    const closedIds = [];
+
+    for (const position of targetPositions) {
+      const key = `${position.chain}:${position.address}`;
+      const livePrice = Number(livePriceMap.get(key));
+      const fallbackPrice = Number(position.current_price ?? position.currentPrice);
+      const currentPrice = Number.isFinite(livePrice) && livePrice > 0 ? livePrice : fallbackPrice;
+      if (!Number.isFinite(currentPrice) || currentPrice <= 0) {
+        throw new Error(`缺少 ${position.symbol || position.address} 的可用价格，无法平仓`);
+      }
+
+      const nextState = buildManualCloseState(
+        {
+          position,
+          currentPrice,
+          updatedAt,
+          settings,
+          takeProfitSteps: getPositionTakeProfitSteps(position, settings),
+          closeReason: reason,
+        },
+        { mode: 'db' }
+      );
+
+      if (repos) {
+        await repos.positions.updateById(position.id, {
+          status: 'closed',
+          currentPrice: nextState.currentPrice,
+          closePrice: nextState.closePrice,
+          closeReason: nextState.closeReason,
+          pnlPct: nextState.pnlPct,
+          updatedAt,
+          closedAt: updatedAt,
+          remainingTokenAmount: 0,
+          remainingPositionSizeUsd: 0,
+          realizedPnlUsd: nextState.realizedPnlUsd,
+          realizedProceedsUsd: nextState.realizedProceedsUsd,
+          tpStage: nextState.tpStage,
+          tpPlanJson: JSON.stringify(nextState.takeProfitSteps),
+          takeProfitPct: nextState.takeProfitPct,
+          stopLossPct: nextState.stopLossPct,
+          peakPrice: nextState.peakPrice,
+          peakPnlPct: nextState.peakPnlPct,
+        });
+        closedIds.push(position.id);
+        continue;
+      }
+
+      db.prepare(`
+        UPDATE paper_positions
+        SET status = ?, current_price = ?, close_price = ?, close_reason = ?,
+            pnl_pct = ?, updated_at = ?, closed_at = ?, remaining_token_amount = ?,
+            remaining_position_size_usd = ?, realized_pnl_usd = ?, realized_proceeds_usd = ?,
+            tp_stage = ?, tp_plan_json = ?, take_profit_pct = ?, stop_loss_pct = ?,
+            peak_price = ?, peak_pnl_pct = ?
+        WHERE id = ?
+      `).run(
+        'closed',
+        nextState.currentPrice,
+        nextState.closePrice,
+        nextState.closeReason,
+        nextState.pnlPct,
+        updatedAt,
+        updatedAt,
+        0,
+        0,
+        nextState.realizedPnlUsd,
+        nextState.realizedProceedsUsd,
+        nextState.tpStage,
+        JSON.stringify(nextState.takeProfitSteps),
+        nextState.takeProfitPct,
+        nextState.stopLossPct,
+        nextState.peakPrice,
+        nextState.peakPnlPct,
+        position.id
+      );
+      closedIds.push(position.id);
+    }
+
+    return {
+      closedIds,
+      closedCount: closedIds.length,
+    };
+  }
+
   async function updatePaperPositions(db, tokens, updatedAt, options = {}) {
     const repos = options.repositories;
     const settings = options.settings || getPaperTradeSettings(db);
@@ -341,7 +482,7 @@ export function createPaperPositionLifecycleService({
           await repos.positions.updateById(position.id, {
             status: 'closed',
             currentPrice: nextState.currentPrice,
-            closePrice: nextState.currentPrice,
+            closePrice: nextState.closePrice,
             closeReason: nextState.closeReason,
             pnlPct: nextState.pnlPct,
             updatedAt,
@@ -363,7 +504,7 @@ export function createPaperPositionLifecycleService({
         closeStmt.run(
           'closed',
           nextState.currentPrice,
-          nextState.currentPrice,
+          nextState.closePrice,
           nextState.closeReason,
           nextState.pnlPct,
           updatedAt,
@@ -425,7 +566,16 @@ export function createPaperPositionLifecycleService({
     const finalSizing = sizing || getPaperEntrySizing(alert, tradePlan);
     const takeProfitSteps = normalizeTakeProfitSteps(settings.takeProfitSteps);
     const openedAtIso = new Date(createdAt * 1000).toISOString();
-    const entryPrice = Number(alert.token.price || 0);
+    const quotedEntryPrice = Number(alert.token.price || 0);
+    const buyExecution = getBuyExecution({
+      chain: alert.token.chain,
+      quotedPrice: quotedEntryPrice,
+      totalCostUsd: finalSizing.positionSizeUsd,
+    });
+    const tokenAmount = roundTo(buyExecution.tokenAmount, 6);
+    const entryPrice = tokenAmount > 0
+      ? roundTo(divBn(finalSizing.positionSizeUsd, tokenAmount), 8)
+      : quotedEntryPrice;
 
     return {
       id: `${alert.token.chain}:${alert.token.address}:${alert.signalCount}`,
@@ -438,8 +588,8 @@ export function createPaperPositionLifecycleService({
       tradeScore: tradePlan.tradeScore,
       positionSizeUsd: finalSizing.positionSizeUsd,
       targetPositionSizeUsd: finalSizing.targetPositionSizeUsd,
-      tokenAmount: finalSizing.tokenAmount,
-      remainingTokenAmount: finalSizing.tokenAmount,
+      tokenAmount,
+      remainingTokenAmount: tokenAmount,
       remainingPositionSizeUsd: finalSizing.positionSizeUsd,
       realizedPnlUsd: 0,
       realizedProceedsUsd: 0,
@@ -471,7 +621,12 @@ export function createPaperPositionLifecycleService({
 
   function scaleIntoPaperPositionInMemory(position, alert, tradePlan, createdAt, sizing) {
     const addPositionUsd = Number(sizing?.positionSizeUsd || 0);
-    const addTokenAmount = Number(sizing?.tokenAmount || 0);
+    const buyExecution = getBuyExecution({
+      chain: alert.token.chain,
+      quotedPrice: alert.token.price,
+      totalCostUsd: addPositionUsd,
+    });
+    const addTokenAmount = roundTo(buyExecution.tokenAmount, 6);
     if (addPositionUsd <= 0 || addTokenAmount <= 0) {
       return position;
     }
@@ -576,6 +731,7 @@ export function createPaperPositionLifecycleService({
     getPaperPositionSizing,
     getPaperPositionSizingByMetrics,
     getPaperTargetPositionSizing,
+    manuallyClosePaperPositions,
     openPaperPosition,
     openPaperPositionInMemory,
     scaleIntoPaperPosition,

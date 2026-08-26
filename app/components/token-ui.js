@@ -1,6 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { withAppBasePath } from '../../src/lib/app-path.js';
+import {
+  getGmgnTokenUrl,
+  getSignalChainDefinition,
+} from '../../src/modules/signals/lib/chain-config.js';
 
 export function formatAddress(value) {
   if (!value) {
@@ -27,9 +32,9 @@ function formatXLabel(url) {
 export function LinkIcon({ kind }) {
   switch (kind) {
     case 'x':
-      return <img src="/branding/x.jpg" alt="" className="brand-icon-image" />;
+      return <img src={withAppBasePath('/branding/x.jpg')} alt="" className="brand-icon-image" />;
     case 'gmgn':
-      return <img src="/branding/gmgn.jpg" alt="" className="brand-icon-image" />;
+      return <img src={withAppBasePath('/branding/gmgn.jpg')} alt="" className="brand-icon-image" />;
     default:
       return <span className="link-letter">?</span>;
   }
@@ -73,7 +78,11 @@ export function AddressCopy({ address, copyId, copiedKey, onCopy }) {
   );
 }
 
-export function ExternalLinks({ address, twitter, className = '' }) {
+export function ChainBadge({ chain }) {
+  return <span className="position-score-chip compact-score-chip">{getSignalChainDefinition(chain).shortLabel}</span>;
+}
+
+export function ExternalLinks({ address, chain = 'sol', twitter, className = '' }) {
   return (
     <div className={`icon-links ${className}`.trim()}>
       {twitter ? (
@@ -90,7 +99,7 @@ export function ExternalLinks({ address, twitter, className = '' }) {
       ) : null}
       {address ? (
         <a
-          href={`https://gmgn.ai/sol/token/${address}`}
+          href={getGmgnTokenUrl(chain, address)}
           target="_blank"
           rel="noreferrer"
           className="icon-link"

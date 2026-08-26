@@ -27,6 +27,17 @@ import {
   passesPushQualityGate as passesPushQualityGateBase,
 } from './modules/signals/lib/token-quality.js';
 import {
+  formatSignalChainList,
+  getConfiguredSignalChains,
+  getGmgnTokenUrl,
+  getSignalChainDefinition,
+} from './modules/signals/lib/chain-config.js';
+import {
+  buildChainTradeRules,
+  getPaperBuyExecution,
+  getPaperSellExecution,
+} from './modules/signals/lib/chain-strategy-config.js';
+import {
   buildTradeRulesFromEnv,
   evaluateTradeIntent as evaluateTradeIntentWithRules,
   getTradeScore as getTradeScoreWithRules,
@@ -105,18 +116,24 @@ const REQUIRE_SOCIALS =
 const MIN_SMART_DEGEN_COUNT = Number(process.env.RADAR_MIN_SMART_DEGEN || 2);
 const MOMENTUM_CONSECUTIVE_UP = 3;
 const MAX_ALERTS_PER_ROUND = 8;
+const SIGNAL_CHAINS = getConfiguredSignalChains();
 // Recent strong winners often peak in the mid-60 score range on their first trigger.
 const TRADE_RULES = buildTradeRulesFromEnv();
 const LEGACY_PAPER_TAKE_PROFIT_PERCENT = Number(process.env.RADAR_PAPER_TP_PERCENT || 50);
-const DEFAULT_PAPER_STOP_LOSS_PERCENT = Number(process.env.RADAR_PAPER_SL_PERCENT || 50);
+const DEFAULT_PAPER_STOP_LOSS_PERCENT = Number(process.env.RADAR_PAPER_SL_PERCENT || 80);
 const MAX_PAPER_STOP_LOSS_PERCENT = Number(process.env.RADAR_PAPER_MAX_SL_PERCENT || 80);
-const DEFAULT_PAPER_TRAILING_START_PERCENT = Number(
-  process.env.RADAR_PAPER_TRAILING_START_PERCENT || 180
+const DEFAULT_PAPER_TIME_STOP_HOURS = Number(process.env.RADAR_PAPER_TIME_STOP_HOURS || 0);
+const DEFAULT_PAPER_TP1_PROTECTION_PERCENT = Number(
+  process.env.SIGNAL_PAPER_TP1_PROTECTION_PERCENT || process.env.RADAR_PAPER_TP1_PROTECTION_PERCENT || 0
 );
-const DEFAULT_PAPER_TRAILING_STOP_PERCENT = Number(
-  process.env.RADAR_PAPER_TRAILING_STOP_PERCENT || 35
+const DEFAULT_PAPER_FAST_FAILURE_MINUTES = Number(
+  process.env.SIGNAL_PAPER_FAST_FAILURE_MINUTES || process.env.RADAR_PAPER_FAST_FAILURE_MINUTES || 0
 );
-const DEFAULT_PAPER_TIME_STOP_HOURS = Number(process.env.RADAR_PAPER_TIME_STOP_HOURS || 8);
+const DEFAULT_PAPER_FAST_FAILURE_LOSS_PERCENT = Number(
+  process.env.SIGNAL_PAPER_FAST_FAILURE_LOSS_PERCENT ||
+    process.env.RADAR_PAPER_FAST_FAILURE_LOSS_PERCENT ||
+    0
+);
 const DEFAULT_PAPER_TAKE_PROFIT_STEPS = normalizeTakeProfitSteps(
   parseTakeProfitStepsFromEnv(process.env.RADAR_PAPER_TP_STEPS) || buildLegacyTakeProfitStepsFromEnv(),
   roundTo
@@ -535,17 +552,6 @@ function compareSignalPriority(left, right) {
   return String(left?.token?.address || '').localeCompare(String(right?.token?.address || ''));
 }
 
-function getGmgnTokenUrl(chain, address) {
-  const gmgnChainMap = {
-    sol: 'sol',
-    eth: 'eth',
-    bsc: 'bsc',
-    base: 'base',
-  };
-
-  return `https://gmgn.ai/${gmgnChainMap[chain] || 'sol'}/token/${address}`;
-}
-
 function getPriceActionScore(token, pctGain, rounds, volUp) {
   let score = 0;
   const smartMoney = Number(token.sm || 0);
@@ -907,9 +913,10 @@ const {
 } = createPaperTradeSettingsService({
   defaultPaperStopLossPercent: DEFAULT_PAPER_STOP_LOSS_PERCENT,
   defaultPaperTakeProfitSteps: DEFAULT_PAPER_TAKE_PROFIT_STEPS,
-  defaultPaperTrailingStartPercent: DEFAULT_PAPER_TRAILING_START_PERCENT,
-  defaultPaperTrailingStopPercent: DEFAULT_PAPER_TRAILING_STOP_PERCENT,
   defaultPaperTimeStopHours: DEFAULT_PAPER_TIME_STOP_HOURS,
+  defaultPaperTp1ProtectionPercent: DEFAULT_PAPER_TP1_PROTECTION_PERCENT,
+  defaultPaperFastFailureMinutes: DEFAULT_PAPER_FAST_FAILURE_MINUTES,
+  defaultPaperFastFailureLossPercent: DEFAULT_PAPER_FAST_FAILURE_LOSS_PERCENT,
   maxPaperStopLossPercent: MAX_PAPER_STOP_LOSS_PERCENT,
   legacyPaperTakeProfitPercent: LEGACY_PAPER_TAKE_PROFIT_PERCENT,
   roundTo,
@@ -933,6 +940,7 @@ const {
   paperTotalCapitalUsd: PAPER_TOTAL_CAPITAL_USD,
   roundTo,
   rules: TRADE_RULES,
+  resolveRules: (chain) => buildChainTradeRules(chain, TRADE_RULES),
   subBn,
   sumBn,
 });
@@ -999,6 +1007,7 @@ const {
   pushMinVolume: PUSH_MIN_VOLUME,
   requireSocials: REQUIRE_SOCIALS,
   sleep,
+  chains: SIGNAL_CHAINS,
 });
 
 const {
@@ -1072,6 +1081,7 @@ const {
   getOpenPaperPositionCount,
   getPaperEntrySizing,
   getPaperPositionSizingByMetrics,
+  manuallyClosePaperPositions,
   openPaperPosition,
   openPaperPositionInMemory,
   scaleIntoPaperPosition,
@@ -1098,11 +1108,15 @@ const {
   roundTo,
   subBn,
   fetchTrackedLivePrices,
+  getBuyExecution: getPaperBuyExecution,
+  getSellExecution: getPaperSellExecution,
 });
 
 const { getRadarConfig } = createScannerConfigService({
   defaultScanConfig: {
     scanInterval: SCAN_INTERVAL,
+    chains: SIGNAL_CHAINS,
+    chainLabel: formatSignalChainList(SIGNAL_CHAINS),
     minMarketCap: MIN_MARKET_CAP,
     maxMarketCap: MAX_MARKET_CAP,
     minLiquidity: MIN_LIQUIDITY,
@@ -1153,6 +1167,13 @@ async function updateStoredPaperTradeSettings(settings, options = {}) {
   return savePaperTradeSettingsToDrizzle(settings, {
     repositories: RADAR_REPOSITORIES,
     applyToOpenPositions: Boolean(options.applyToOpenPositions),
+  });
+}
+
+async function manuallyCloseStoredPaperPositions(input = {}) {
+  return manuallyClosePaperPositions(null, input, {
+    repositories: RADAR_REPOSITORIES,
+    settings: await getStoredPaperTradeSettings(),
   });
 }
 
@@ -1253,6 +1274,7 @@ const { runMain } = createScannerBootstrapService({
   sleep,
   tgSend,
   tradeRules: TRADE_RULES,
+  chains: SIGNAL_CHAINS.map((chain) => getSignalChainDefinition(chain).shortLabel),
 });
 
 const currentFilePath = fileURLToPath(import.meta.url);
@@ -1266,6 +1288,7 @@ if (currentFilePath === entryFilePath) {
 }
 
 export {
+  manuallyCloseStoredPaperPositions,
   getPaperTradeSettingsLockState,
   scanNarratives as scanSignals,
   getStoredPaperTradeSettings,

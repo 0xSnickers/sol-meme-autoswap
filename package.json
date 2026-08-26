@@ -1,13 +1,13 @@
 {
   "name": "automated-trading-meme",
   "version": "1.0.0",
-  "description": "Signal scan worker and SOL meme paper trading dashboard",
+  "description": "Multi-chain signal scan worker and meme paper trading dashboard for Solana, BNB Chain and Base",
   "type": "module",
   "main": "src/signal-scanner.js",
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/web/run.js dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node scripts/web/run.js start",
     "db:push": "drizzle-kit push --force",
     "signal:worker": "node scripts/signal-worker/run.js",
     "signal:once": "node scripts/signal-worker/run.js --once"

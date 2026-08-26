@@ -4,6 +4,26 @@ import { readRealtimeSignalSnapshot } from '../../../../src/modules/signals/serv
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+function buildSnapshotSignature(snapshot) {
+  return JSON.stringify({
+    alerts: (snapshot.alerts || []).map((alert) => [
+      alert.chain,
+      alert.address,
+      alert.latestPushedAt || alert.pushedAt,
+      alert.price,
+      alert.tradeScore,
+      alert.paperPnLPct,
+    ]),
+    positions: (snapshot.paperPositions || []).map((position) => [
+      position.id,
+      position.status,
+      position.currentPrice,
+      position.pnlUsd,
+    ]),
+    summary: snapshot.paperSummary,
+  });
+}
+
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const safeLimit = normalizeSignalLimit(searchParams.get('limit'));
@@ -15,6 +35,7 @@ export async function GET(request) {
       let pushing = false;
       let streamTimer = null;
       let heartbeatTimer = null;
+      let lastSnapshotSignature = '';
 
       const safeEnqueue = (payload) => {
         if (closed) {
@@ -56,7 +77,14 @@ export async function GET(request) {
         pushing = true;
         try {
           const snapshot = await readRealtimeSignalSnapshot(safeLimit);
-          safeEnqueue(encoder.encode(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`));
+          const signature = buildSnapshotSignature(snapshot);
+          if (signature !== lastSnapshotSignature) {
+            lastSnapshotSignature = signature;
+            safeEnqueue(encoder.encode(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`));
+          }
+          safeEnqueue(
+            encoder.encode(`event: refresh-cycle\ndata: ${JSON.stringify({ at: Date.now() })}\n\n`)
+          );
         } catch (error) {
           safeEnqueue(
             encoder.encode(
@@ -70,6 +98,11 @@ export async function GET(request) {
         }
       };
 
+      safeEnqueue(
+        encoder.encode(
+          `event: refresh-cycle\ndata: ${JSON.stringify({ at: Date.now(), phase: 'connected' })}\n\n`
+        )
+      );
       void pushSnapshot();
       streamTimer = setInterval(() => {
         void pushSnapshot();

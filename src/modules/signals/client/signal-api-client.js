@@ -1,4 +1,5 @@
 import { APP_CONFIG } from '../../../config/app-config.js';
+import { withAppBasePath } from '../../../lib/app-path.js';
 
 export function buildSignalSnapshotUrl(
   limit = APP_CONFIG.signals.snapshotLimit,
@@ -10,11 +11,11 @@ export function buildSignalSnapshotUrl(
   if (mode === 'realtime') {
     params.set('mode', 'realtime');
   }
-  return `/api/signals/snapshot?${params.toString()}`;
+  return withAppBasePath(`/api/signals/snapshot?${params.toString()}`);
 }
 
 export function buildSignalStreamUrl(limit = APP_CONFIG.signals.snapshotLimit) {
-  return `/api/signals/stream?limit=${encodeURIComponent(limit)}`;
+  return withAppBasePath(`/api/signals/stream?limit=${encodeURIComponent(limit)}`);
 }
 
 export async function fetchSignalSnapshot({
